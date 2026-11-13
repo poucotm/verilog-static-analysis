@@ -1,0 +1,92 @@
+% ---- 코드블록(사이클 표, diff): 작은 글자, 자동 줄바꿈으로 오른쪽 잘림 방지
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\},fontsize=\small}
+\fvset{breaklines=true,breakanywhere=true,fontsize=\small}
+
+% ---- 표: 격자 표(table-grid.lua)용. 표를 raw LaTeX로 바꾸므로 longtable을 직접 불러온다
+\usepackage{longtable,array}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\definecolor{tblhead}{HTML}{E8ECF2}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\LTpre}{3pt}
+\setlength{\LTpost}{3pt}
+
+% ---- 코드블록 글자 칸 (code-block.lua): 영문·공백 1칸, 한글 등 전각 문자 2칸
+\newlength{\cw}
+\AtBeginDocument{\settowidth{\cw}{\ttfamily\small 0}}
+\newcommand{\cbs}{\hbox to\cw{\hfil}}                   % 공백 1칸
+\newcommand{\cbn}[1]{\makebox[\cw][c]{#1}}               % 그 밖의 비ASCII 문자 1칸 (화살표 등)
+\newcommand{\cbw}[1]{\makebox[2\cw][c]{#1}}              % 한글 등 전각 문자 2칸
+
+% ---- 수정 제안 diff (code-block.lua): - 줄은 빨강, + 줄은 초록
+\definecolor{diffdel}{HTML}{B03A2E}
+\definecolor{diffdelbg}{HTML}{FDECEA}
+\definecolor{diffadd}{HTML}{1E7B3C}
+\definecolor{diffaddbg}{HTML}{E8F5EC}
+\definecolor{diffhunk}{HTML}{6B7280}
+\definecolor{diffctxbg}{HTML}{F6F6F6}
+
+% ---- 설계 구조 그림(die-layout.lua): Chip Die 느낌의 갈색·붉은색 계열, 블록 종류별 색
+\usepackage{tikz}
+\definecolor{diedie}{HTML}{EADBC8}   % top die 바탕
+\definecolor{dieline}{HTML}{5C3A21}  % 테두리
+\definecolor{dietext}{HTML}{2B1A0E}  % 글자
+\definecolor{diectrl}{HTML}{D98C6C}  % Control (FSM, 제어)        - 붉은 구리색
+\definecolor{diebuf}{HTML}{E3B26A}   % Buffer/Memory (FIFO, RAM)  - 황동색
+\definecolor{diedp}{HTML}{C9A585}    % Datapath (연산)            - 황갈색
+\definecolor{dieif}{HTML}{C97C7C}    % Interface (I/O, 버스)      - 벽돌색
+\definecolor{dieclk}{HTML}{E8CFA8}   % Clock/Reset (동기화)       - 모래색
+\definecolor{diegen}{HTML}{F3E7D8}   % 종류 미지정 블록           - 밝은 베이지
+\definecolor{diebb}{HTML}{D9D4CE}    % Black box                  - 회갈색
+
+% ---- 제목: 페이지를 나누지 않는 대신 제목으로 구분
+%  #    보고서 제목 → 남색 바탕 흰 글자 박스 + 구리색 선 (table-grid.lua가 만든다)
+%  ##   절 → 남색 글자 + 아래 굵은 선
+%  ###  이슈 → 검은 테두리 표 [ V-001 | 제목 ], 번호 칸은 심각도 색 (issue-head.lua가 만든다)
+%  #### 이슈 안 항목(요약, 문제 설명 …) → 남색 굵은 글자, 위쪽 여백
+\definecolor{secblue}{HTML}{1F3A5F}
+\definecolor{accent}{HTML}{B5651D}   % 제목 아래 구리색 선
+\definecolor{sevhigh}{HTML}{B03A2E}  % 심각도 상 - 빨강
+\definecolor{sevmid}{HTML}{D4730B}   % 심각도 중 - 주황
+\definecolor{sevlow}{HTML}{2E7D5B}   % 심각도 하 - 녹색
+% 남은 공간이 #1 줄보다 적으면 제목을 다음 페이지로 (제목만 페이지 끝에 남는 것 방지, 빈 페이지는 만들지 않음)
+\newcommand{\keepspace}[1]{\par\penalty-100\begingroup
+  \dimen0=#1\baselineskip \dimen2=\pagegoal \advance\dimen2 by -\pagetotal
+  \ifdim\dimen0>\dimen2 \ifdim\dimen2>0pt \vfil\fi \break\fi\endgroup}
+\newcommand{\reporttitle}[1]{\par\noindent
+  \colorbox{secblue}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
+    \centering\vspace{5pt}{\LARGE\bfseries\color{white}#1}\vspace{5pt}}}\par\nointerlineskip
+  \noindent{\color{accent}\rule{\linewidth}{2.5pt}}\par\smallskip}
+% 이슈 제목 표: \issuehead{앵커}{번호}{제목}{색}
+%  [ 번호 | 제목 ] 검은 테두리, 번호 칸은 색 바탕 흰 글자, 제목 칸은 같은 색의 옅은 바탕
+\newlength{\issuenow}\setlength{\issuenow}{17mm}
+\newcommand{\issuehead}[4]{\par\vspace{9pt}\noindent\hypertarget{#1}{}\label{#1}%
+  {\setlength{\arrayrulewidth}{0.9pt}\arrayrulecolor{black}\renewcommand{\arraystretch}{1.5}%
+  \begin{tabular}{|>{\columncolor{#4}\centering\arraybackslash}p{\dimexpr\issuenow-2\tabcolsep\relax}%
+                  |>{\columncolor{#4!12}\raggedright\arraybackslash}p{\dimexpr\linewidth-\issuenow-2\tabcolsep-3\arrayrulewidth\relax}|}
+  \hline
+  \textcolor{white}{\bfseries\large #2} & {\bfseries\large #3}\\
+  \hline
+  \end{tabular}}\par\nopagebreak\vspace{3pt}}
+\IfFileExists{titlesec.sty}{%
+  \usepackage[explicit]{titlesec}
+  \titleformat{\subsection}{\normalfont\Large\bfseries\color{secblue}}{}{0pt}{##1}[{\color{secblue}\titlerule[1.2pt]}]
+  \titlespacing*{\subsection}{0pt}{12pt}{5pt}
+  \titleformat{\subsubsection}{\normalfont\large\bfseries}{}{0pt}%
+    {\colorbox{tblhead}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{##1}}}
+  \titlespacing*{\subsubsection}{0pt}{12pt}{4pt}
+  \titleformat{\paragraph}[block]{\normalfont\normalsize\bfseries\color{secblue}}{}{0pt}{##1}
+  \titlespacing*{\paragraph}{0pt}{9pt}{2pt}
+}{}
+
+% ---- 문단: 들여쓰기 없음, 좁은 문단 간격
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt plus 1pt}
+
+% ---- 한글 줄바꿈 (xetexko를 쓰면 xetexko가 처리)
+\ifdefined\setmainhangulfont\else\XeTeXlinebreaklocale "ko"\fi
+% ---- xeCJK(대체 경로)일 때: 화살표·도형 기호(→ ← ■ 등)는 condensed 영문 폰트에 없으므로 한글 폰트로 그린다
+\ifdefined\xeCJKDeclareCharClass
+  \xeCJKDeclareCharClass{CJK}{"2190 -> "21FF, "25A0 -> "25FF}
+\fi
