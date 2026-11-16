@@ -530,7 +530,7 @@ ready | 1 | 1 | 1 | 1 | 1 |   ← 0이 되어야 함
 - Include only signals related to the symptom. Max 90 characters per line. Keep annotations (← …) short and in Korean.
 - When drawing a table inside a code block, count **one Korean character as two ASCII characters wide** to align columns (the report PDF aligns cells on this basis).
 - For a hang, explain below the table why the state no longer changes after the last column.
-- Below every cycle table, add **one line per key cycle** telling what happens there in plain words (e.g., `cycle 5: clear가 풀렸는데 wrproc가 아직 1이라 프레임 시작으로 본다`). Two to four lines; a reader must be able to follow the table from these lines alone.
+- Below every cycle table, add **one line per key cycle** telling what happens there in plain words, as a bullet list outside the code block (e.g., `- cycle 5: clear가 풀렸는데 wrproc가 아직 1이라 프레임 시작으로 본다`). Two to four lines; a reader must be able to follow the table from these lines alone.
 - **Use a cycle table for every issue where something happens over time**, optimization issues included: idle or wasted cycles (current behavior, wasted cycles marked), a register loaded in cycles where it is not needed, a condition that is never true in the cycle where it is tested. For an optimization issue, put the table under "사이클 표" and the gain/cost under "근거".
 - Only an issue with **no time axis** (duplicated operation, excess width, depth of a combinational path, unneeded reset) has no cycle table. Give a small table under "근거" instead: example values showing both forms give the same result, or the depth per stage.
 
@@ -607,11 +607,11 @@ rx_top
 
 #### 심각도 근거
 
-상-2: srst 해제 직후 init이 오면 reset 없이는 ready가 0으로 돌아오지 않음 (조건 번호 + 한 문장)
+상-1: srst 해제 뒤 init이라는 정상 입력 순서에서, 초기화 중 들어온 입력 데이터가 유실됨 (조건 번호 + 한 문장)
 
 #### 요약
 
-1~2문장: 어떤 조건에서 → 무엇이 잘못되는지
+1~2문장: 블록이 무엇을 하는 중에 → 무엇이 잘못되는지 (밖에서 보이는 것만)
 
 #### 발생 가능한 문제
 
@@ -619,13 +619,15 @@ rx_top
 
 #### 문제 설명
 
-어떤 신호들이 어떤 관계여야 하는데 어떤 조건에서 깨지는지 2~4문장
+원래 하려는 동작 → 잘못되는 상황 → 그 상황에서 실제 동작 → 밖에서 보이는 결과 → 문제가 되지 않는 경우 ("Writing style")
 
 #### 신호 흐름
 
-srst → state → ready → 출력 ready
+init → state → ready → 출력 ready
 
 #### 발생 조건
+
+한두 문장: 어떤 입력 순서·타이밍에서 생기는지
 
 #### 사이클 표
 
@@ -633,17 +635,27 @@ srst → state → ready → 출력 ready
 (사이클 표)
 ```
 
+- cycle 1: (그 사이클에 일어나는 일을 한 줄로)
+- cycle 2~3: …
+
+#### 근거
+
+(최적화 이슈만: 이득과 비용, 시간 축이 없으면 값·구조 표)
+
 #### 수정 제안
 
 ```diff
+(블록의 시작부터 끝까지, 바뀌는 줄 전부)
 ```
+
+수정 후: (사이클 표의 어느 사이클이 어떤 값으로 바뀌는지)
 
 ## 점검 커버리지
 
 | 모듈 | M1 | M2 | M3 | M4 | M5 | M6 | M7 | M8 | M9 | M10 | M11 | M12 | M13 | M14 | M15 |
 |:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| rx_ctrl | OK | [V-001](#v-001) | OK | OK | OK | - | OK | OK | OK | - | OK | - | OK | - | - |
-| rx_dp | OK | - | - | OK | [V-003](#v-003) | [V-002](#v-002) | OK | OK | [V-004](#v-004) | OK | OK | OK | OK | - | OK |
+| rx_ctrl | [V-001](#v-001) | OK | OK | OK | OK | - | OK | OK | OK | - | OK | - | OK | - | - |
+| rx_dp | OK | - | - | OK | OK | OK | OK | OK | [V-004](#v-004) | OK | OK | [V-003](#v-003) | OK | - | OK |
 
 | 모듈 간 | X1 | X2 | X3 | X4 |
 |:--:|:--:|:--:|:--:|:--:|
@@ -653,7 +665,7 @@ srst → state → ready → 출력 ready
 
 | 모듈 | 종류 | 인스턴스 | 만족해야 할 조건 | 관련 이슈 |
 |:--:|:--:|------|------------------------------|:--:|
-| fifo_core | 미제공 | `rx_top.v:88` u_fifo | rd_en 후 1클럭에 rd_valid | [V-002](#v-002) |
+| fifo_core | 미제공 | `rx_top.v:88` u_fifo | data_last는 data_valid와 같은 사이클에만 1 | [V-002](#v-002) |
 ````
 
 ### Overview (분석 개요)
@@ -662,7 +674,7 @@ srst → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.5 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.6 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
 - **참고 스펙**: paths of the spec files under `docs/` used for the analysis (those confirmed in 3.0). Join multiple with `, `. **If no spec was used, omit this row.** Never list `docs/example/` files.
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".
@@ -692,11 +704,12 @@ srst → state → ready → 출력 ready
   - **근거**: optimization issues only. Gain and cost (current vs. improved cycle comparison and added cost for cycles, width and share of unneeded cycles for power), and for an issue with no time axis the value or structure table that replaces the cycle table.
 - The table at the top of each detail is `심각도 | 관련 신호`. **관련 신호** lists only 2–5 main signal names directly involved (e.g., `srst`, `init`, `state`, `ready`). If a hierarchy path is needed, keep it short like `u_ctrl.ready`.
 - **Code locations (`file:line`) go only in the summary table's 위치 column.** Details contain no locations, only signal names (the fix diff is the exception).
-- Signal flow joins signal names with `→`: `srst → state → ready → 출력 ready`
+- Signal flow joins signal names with `→`: `init → state → ready → 출력 ready`
+- **발생 조건**: one or two sentences giving the input order and timing that trigger it (and the spec/black-box condition it depends on, if any).
 
 ### Writing style (요약, 발생 가능한 문제, 문제 설명)
 Write for a reader who knows digital design but has **not read this code**. The prose explains; the cycle table and the diff prove.
-- **Explain by meaning, not by expression.** No Verilog expressions or operators in prose (`~clear & wrproc`, `sizex > 0 && wrent`, `==`, `<=`). Say what the logic does: "clear가 아닌 동안의 wrproc를 한 클럭 늦춘 값". Expressions appear only in the diff.
+- **Explain by meaning, not by expression.** No Verilog expressions or operators in prose (`~clear & wrproc`, `sizex > 0 && wrent`, `==`, `<=`). Say what the logic does: "clear가 아닌 동안의 wrproc를 한 클럭 늦춘 값". Expressions appear only in the diff. Stating the value of a signal is not an expression and is fine (`ready가 1인 동안`, `valid=0인 사이클`).
 - **One fact per sentence, at most two signal names per sentence.** Split a sentence that lists what several signals do.
 - **Give a signal its role the first time it appears in an issue**: `` `wrstt`(프레임 시작 표시) ``. After that the name alone is enough.
 - **요약** and **발생 가능한 문제** must read without knowing any internal signal: name only ports and things the reader can see from outside (입력 프레임, 출력 구간, 남은 바이트). 요약 says what the block is doing at that point and what goes wrong.
@@ -780,7 +793,7 @@ Go through the list below **from the top, in order**, and take the grade of the 
 - If several conditions match, use the highest grade (highest in the list).
 - If the scenario holds but **may be intended design behavior**, lower it one grade (상→중, 중→하, 하 stays). Then append "(의도 확인 필요로 한 단계 낮춤)" to the end of the reason.
 - If none of the conditions above match, do not raise it as an issue.
-- The 심각도 근거 line is written in Korean: condition number + one sentence. Examples: `상-2: srst 해제 직후 init이 오면 reset 없이는 ready가 0으로 돌아오지 않음`, `중-1: 같은 사이클에 flush와 write가 오면 count가 1 어긋남 (의도 확인 필요로 한 단계 낮춤)`
+- The 심각도 근거 line is written in Korean: condition number + one sentence. Examples: `상-2: ack가 WAIT_ACK에 들어가기 전에 지나가면 reset 없이는 빠져나오지 못함`, `중-1: 같은 사이클에 flush와 write가 오면 count가 1 어긋남 (의도 확인 필요로 한 단계 낮춤)`
 
 ### Coverage (점검 커버리지)
 - Copy the 3.3 checklist results as is. Use two tables.
@@ -808,6 +821,9 @@ Go through the list below **from the top, in order**, and take the grade of the 
 - Silently omitting scope that could not be analyzed
 - Reordering the 3.3 checklist or skipping checks; writing the result file before all coverage cells are filled
 - Deciding severity without a condition number from the severity procedure
+- A functional issue without a cycle table (the only exception is an M15 issue shown with concrete values, 3.4); a cycle table without its reading lines
+- Verilog expressions or shorthand cycle labels in the prose of 요약 / 발생 가능한 문제 / 문제 설명
+- A fix diff that shows only the key line, cuts a block open, or leaves out the declaration of a new signal
 - Asserting black-box internal behavior by guessing
 - Raising problems that start and end inside a graybox; proposing fixes to graybox code
 - Using Verilog files outside the source folder in the analysis

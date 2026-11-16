@@ -133,7 +133,11 @@ Under `## 상세`, write each issue with a `###` heading, continuously. No page 
 
 #### 신호 흐름
 
-srst → state → ready → 출력 ready
+init → state → ready → 출력 ready
+
+#### 발생 조건
+
+…
 
 #### 사이클 표
 
@@ -142,12 +146,16 @@ cycle | 0 | 1 | 2 |
 ...
 ```
 
+- cycle 1: …
+
 #### 수정 제안
 
 ```diff
 -  ...
 +  ...
 ```
+
+수정 후: …
 ````
 
 - The anchor `{#v-001}` must match the summary table's `[보기](#v-001)` (lowercase).
@@ -157,7 +165,7 @@ cycle | 0 | 1 | 2 |
 - Do not show confidence.
 - Copy "심각도 근거" from the result file as is, condition number and sentence (e.g., `상-2: …`). The meaning of condition numbers is in the appendix.
 - Leave out items not in the result file; never create empty items.
-- An issue may have both "사이클 표" and "근거". Copy both, in the result file's order, together with the per-cycle reading lines under the cycle table. Do not rewrite the prose of the result file.
+- An issue may have both "사이클 표" and "근거". Copy both, in the result file's order, together with the per-cycle reading lines under the cycle table, the label line above each diff block, and the "수정 후" line below the diff. Do not rewrite the prose of the result file.
 
 ### 3.5 Coverage (점검 커버리지)
 Under `## 점검 커버리지`, copy the result file's two tables (module × M1–M15, inter-module × X1–X4) as is.

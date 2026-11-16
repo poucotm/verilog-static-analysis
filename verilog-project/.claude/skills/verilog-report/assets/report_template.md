@@ -13,7 +13,7 @@
 | 분석 소스 | 총 12개 파일, 3,450줄 (그레이박스 1개 파일, 420줄 별도) |
 | 참고 스펙 | `docs/analysis-spec.md` |
 | 분석시간 | 2026-10-29 14:10 |
-| 룰 버전 | v0.8.5 @ POUCO |
+| 룰 버전 | v0.8.6 @ POUCO |
 | 사용모델 | Opus 5.5 |
 | 노력 | medium |
 | 소요시간 | 12분 30초 |
@@ -59,41 +59,60 @@ rx_top
 
 #### 심각도 근거
 
-상-2: srst 해제 직후 init이 오면 reset 없이는 ready가 0으로 돌아오지 않는다.
+상-1: srst 해제 뒤 init이라는 정상 입력 순서에서, 초기화 중 들어온 입력 데이터가 유실되어 출력에서 빠진다.
 
 #### 요약
 
-srst 해제 직후 사이클에 init이 오면 FSM은 INIT을 처리하지만 ready 레지스터는 갱신되지 않아 1로 남는다.
+리셋을 푼 직후 초기화 요청(init)이 오면, 블록은 초기화를 처리하는 동안에도 ready를 1로 둔다. 이때 들어온 입력 데이터는 저장되지 않고 사라진다.
 
 #### 발생 가능한 문제
 
-상위 블록이 ready=1을 보고 INIT 처리 중에 다음 데이터를 보내고, 그 데이터는 아무도 받지 않아 사라진다. 출력 결과에서 첫 프레임 일부가 빠진다.
+앞 블록은 ready가 1인 것을 보고 초기화 중에 데이터를 보낸다. 그 데이터는 어디에도 저장되지 않아, 출력 결과에서 첫 프레임의 앞부분이 빠진다.
 
 #### 문제 설명
 
-ready는 state가 IDLE일 때만 1이어야 한다. 그런데 ready는 다음 state가 IDLE로 바뀔 때만 다시 계산되고, srst 해제 사이클에는 state만 INIT으로 넘어가 두 신호의 관계가 깨진다.
+ready는 블록이 입력을 받을 수 있는 동안에만 1이어야 한다. 이 블록은 `state`(제어 FSM의 현재 상태)가 IDLE일 때만 입력을 받는다. 그런데 ready를 내리는 조건은 start를 받았을 때 하나뿐이다. init으로 초기화 상태(INIT)에 들어갈 때는 ready가 내려가지 않는다. 그래서 초기화가 진행되는 동안에도 ready가 1로 남고, 앞 블록이 보낸 데이터가 유실된다. init을 입력이 없는 구간에서만 준다면 문제가 되지 않는다.
 
 #### 신호 흐름
 
-srst → state → ready → 출력 ready
+init → state → ready → 출력 ready
+
+#### 발생 조건
+
+srst 해제 뒤 start보다 init이 먼저 오고, 초기화가 끝나기 전에 앞 블록이 데이터를 보낼 때 생긴다.
 
 #### 사이클 표
 
 ```
-cycle | 0 | 1 | 2 | 3 | 4 |
-------+---+---+---+---+---+
-srst  | 1 | 0 | 0 | 0 | 0 |
-init  | 0 | 1 | 0 | 0 | 0 |
-state | I | I | N | N | N |   ← INIT 처리
-ready | 1 | 1 | 1 | 1 | 1 |   ← 0이 되어야 함
+cycle    | 0 | 1 | 2 | 3 | 4 |
+---------+---+---+---+---+---+
+srst     | 1 | 0 | 0 | 0 | 0 |
+init     | 0 | 1 | 0 | 0 | 0 |
+state    | I | I | N | N | I |   ← I: IDLE, N: INIT
+ready    | 1 | 1 | 1 | 1 | 1 |   ← cycle 2~3에 0이어야 함
+s_tvalid | 0 | 0 | 1 | 1 | 0 |   ← 보낸 데이터 2개가 유실
 ```
+
+- cycle 1: srst가 풀리고 init이 들어온다.
+- cycle 2~3: 초기화 중인데 ready가 1로 남아, 앞 블록이 데이터 2개를 보낸다.
+- cycle 4: IDLE로 돌아오지만 cycle 2~3의 데이터는 저장되지 않았다.
 
 #### 수정 제안
 
 ```diff
--  else if (state_nxt == IDLE) ready <= 1'b1;
-+  else ready <= (state_nxt == IDLE);
+ always @(posedge clk) begin
+   if (srst)
+     ready <= 1'b1;
+-  else if (start)
+-    ready <= 1'b0;
+-  else if (state_nxt == IDLE)
+-    ready <= 1'b1;
++  else
++    ready <= (state_nxt == IDLE);
+ end
 ```
+
+수정 후: cycle 2~3에서 ready가 0이 되어 앞 블록이 데이터를 보내지 않는다. start를 받은 다음 사이클에 ready가 0이 되는 기존 동작은 그대로다.
 
 ### V-002 data_valid 없는 data_last로 가짜 결과 출력 {#v-002}
 
@@ -107,15 +126,37 @@ ready | 1 | 1 | 1 | 1 | 1 |   ← 0이 되어야 함
 
 #### 요약
 
-data_valid=0인 사이클에 data_last=1이 오면 누적기가 결과 valid를 만든다.
+프레임 끝 표시만 있고 유효한 샘플이 없는 사이클이 오면, 블록은 더한 값이 없는데도 결과를 한 번 내보낸다.
 
 #### 발생 가능한 문제
 
-입력 프로토콜이 data_last 단독 사이클을 허용하면 빈 결과가 한 번 더 출력되고, 하위 블록은 프레임 수를 잘못 센다.
+빈 결과가 한 번 더 출력되고, 뒤 블록은 프레임이 하나 더 온 것으로 센다.
 
 #### 문제 설명
 
-결과 valid는 data_last만 보고 만들어지는데, 누적 레지스터는 data_valid일 때만 갱신된다. fifo_core의 출력 규칙에 따라 이 조합이 실제로 올 수 있는지가 달라진다.
+누적기는 `data_valid`(입력 샘플이 유효함)가 1인 사이클에만 값을 더한다. 프레임의 마지막 샘플은 `data_last`(프레임 끝 표시)로 알린다. 그런데 결과가 유효하다는 표시인 `res_valid`는 data_last만 보고 만든다. data_valid 없이 data_last만 1인 사이클이 오면, 더한 값이 없는 결과가 한 번 나간다. 이 두 신호는 블랙박스 fifo_core가 낸다. fifo_core가 data_last를 항상 data_valid와 함께 낸다면 문제가 되지 않는다.
+
+#### 신호 흐름
+
+fifo_core 출력 → data_last → res_valid → 출력 결과
+
+#### 발생 조건
+
+fifo_core가 data_valid가 0인 사이클에 data_last를 1로 낼 때 생긴다.
+
+#### 사이클 표
+
+```
+cycle      |  0  |  1  |  2  |  3  |
+-----------+-----+-----+-----+-----+
+data_valid |  1  |  1  |  0  |  0  |
+data_last  |  0  |  1  |  0  |  1  |   ← cycle 3: valid 없는 last
+acc        |  a  | a+b |  0  |  0  |
+res_valid  |  0  |  1  |  0  |  1  |   ← cycle 3: 가짜 결과
+```
+
+- cycle 1: 마지막 샘플이 들어와 정상 결과(a+b)가 나간다.
+- cycle 3: 유효한 샘플 없이 data_last만 와서, 값이 0인 결과가 한 번 더 나간다.
 
 #### 수정 제안
 
@@ -123,6 +164,8 @@ data_valid=0인 사이클에 data_last=1이 오면 누적기가 결과 valid를 
 -  assign res_valid = data_last;
 +  assign res_valid = data_last & data_valid;
 ```
+
+수정 후: cycle 3에서 res_valid가 0으로 남아 가짜 결과가 나가지 않는다.
 
 ### V-003 xn 계산 중 다음 CB의 data_last가 오면 앞 CB 결과 유실 {#v-003}
 
@@ -132,15 +175,52 @@ data_valid=0인 사이클에 data_last=1이 오면 누적기가 결과 valid를 
 
 #### 심각도 근거
 
-중-1: back-to-back 입력이라는 특정 조건에서만 발생하지만, 정상 사용 중 도달할 수 있다.
+중-1: 입력이 쉬지 않고 이어지는 조건에서만 발생하지만, 정상 사용 중 도달할 수 있다.
 
 #### 요약
 
-xn 계산이 끝나기 전에 다음 CB의 data_last가 오면 결과 레지스터가 덮어써진다.
+한 CB의 결과를 후처리하는 3사이클 안에 다음 CB가 끝나면, 앞 CB의 결과가 출력되기 전에 지워진다.
 
 #### 발생 가능한 문제
 
-앞 CB 결과가 출력되지 않고 사라진다. 입력이 연속으로 들어오는 최대 처리율 조건에서만 나타난다.
+앞 CB의 결과가 출력되지 않고 사라진다. 길이가 짧은 CB가 연속으로 들어올 때만 나타난다.
+
+#### 문제 설명
+
+블록은 CB가 끝나면 누적 결과를 `res_q`(결과 레지스터)에 담고, 3사이클 동안 xn 계산을 한 뒤 출력한다. 계산 중임은 `xn_busy`(xn 계산 진행 표시)로 알 수 있다. 그런데 res_q에 값을 담는 조건은 xn_busy를 보지 않는다. 계산이 끝나기 전에 다음 CB가 끝나면, res_q가 새 결과로 덮어써진다. 그 결과 앞 CB의 결과는 한 번도 출력되지 않는다. 스펙이 CB 길이를 4샘플 이상으로 보장한다면 문제가 되지 않는다.
+
+#### 신호 흐름
+
+data_last → res_q → xn 계산 → 출력 결과
+
+#### 발생 조건
+
+앞 CB의 data_last 뒤 3사이클 안에 다음 CB의 data_last가 올 때 생긴다.
+
+#### 사이클 표
+
+```
+cycle     | 0  | 1  | 2  | 3  | 4  |
+----------+----+----+----+----+----+
+data_last | 1  | 0  | 1  | 0  | 0  |   ← CB0 끝, CB1 끝
+xn_busy   | 0  | 1  | 1  | 1  | 0  |
+res_q     | -  | R0 | R0 | R1 | R1 |   ← cycle 3: R0가 덮어써짐
+res_valid | 0  | 0  | 0  | 0  | 1  |   ← R1만 출력
+```
+
+- cycle 0: CB0이 끝나 결과 R0가 res_q에 담기고 xn 계산이 시작된다.
+- cycle 2: 계산이 끝나기 전에 CB1이 끝난다.
+- cycle 3: res_q가 R1으로 바뀌어 R0가 사라진다.
+- cycle 4: 결과가 한 번만 나가고, 그 값은 R1이다.
+
+#### 수정 제안
+
+```diff
+-  assign in_ready = 1'b1;
++  assign in_ready = ~xn_busy;
+```
+
+수정 후: cycle 1~3에 입력이 멈춰 CB1의 data_last가 cycle 4 이후로 밀리고, R0가 먼저 출력된다. 부작용으로 xn 계산 3사이클 동안 입력을 받지 않아 최대 처리율이 낮아진다. 처리율을 유지하려면 결과 레지스터를 2단으로 늘리는 방법도 있다.
 
 ### V-004 xn 곱셈기가 두 경로에 중복되어 DSP 낭비 {#v-004}
 
@@ -154,15 +234,36 @@ xn 계산이 끝나기 전에 다음 CB의 data_last가 오면 결과 레지스�
 
 #### 요약
 
-같은 입력의 곱셈이 u_mul0과 u_mul1에서 따로 계산된다.
+같은 두 값의 곱셈을 곱셈기 두 개가 따로 계산한다.
 
 #### 발생 가능한 문제
 
-기능 문제는 없지만 DSP 블록을 하나 더 쓴다. 두 결과는 항상 같은 값이다.
+기능 문제는 없지만 DSP 블록을 하나 더 쓴다.
+
+#### 문제 설명
+
+rx_dp는 샘플과 계수의 곱을 두 단계에서 쓴다. 단계마다 곱셈기를 하나씩 두었는데, 두 곱셈기의 입력이 같다. 그래서 두 결과는 항상 같은 값이고, 곱셈기 하나는 필요 없다.
 
 #### 근거
 
-두 곱셈기의 입력이 `x_q`, `coef_q`로 같고, 출력은 서로 다른 state에서만 쓰인다.
+```
+곱셈기 | 입력         | 결과를 쓰는 state
+-------+--------------+------------------
+u_mul0 | x_q, coef_q  | CALC
+u_mul1 | x_q, coef_q  | NORM
+```
+
+입력이 같으므로 `mul0_out`과 `mul1_out`은 항상 같다. 하나를 지우면 16×16 곱셈기 1개가 줄고, 추가되는 로직은 없다.
+
+#### 수정 제안
+
+```diff
+   mult16 u_mul0 (.clk(clk), .a(x_q), .b(coef_q), .p(mul0_out));
+-  mult16 u_mul1 (.clk(clk), .a(x_q), .b(coef_q), .p(mul1_out));
++  assign mul1_out = mul0_out;
+```
+
+수정 후: `mul1_out`은 `mul0_out`과 같은 사이클에 같은 값이 되어, 지연과 결과는 바뀌지 않는다.
 
 ## 점검 커버리지
 
@@ -173,7 +274,7 @@ xn 계산이 끝나기 전에 다음 CB의 data_last가 오면 결과 레지스�
 | rx_ctrl | [V-001](#v-001) | OK | OK | OK | OK | - | OK | OK | OK | - | OK | - | OK | - | - |
 | rx_fsm | OK | OK | OK | OK | - | - | OK | OK | OK | - | OK | - | OK | - | - |
 | rx_counter | OK | - | - | OK | OK | - | - | OK | OK | - | OK | - | OK | - | - |
-| rx_dp | OK | - | - | OK | OK | [V-003](#v-003) | OK | OK | [V-004](#v-004) | OK | OK | OK | OK | - | OK |
+| rx_dp | OK | - | - | OK | OK | OK | OK | OK | [V-004](#v-004) | OK | OK | [V-003](#v-003) | OK | - | OK |
 | mult16 | OK | - | - | - | - | OK | - | OK | OK | - | - | OK | OK | - | OK |
 | accum | OK | - | - | OK | OK | OK | OK | OK | OK | - | OK | OK | OK | - | OK |
 | saturate | - | - | - | OK | - | - | - | OK | OK | - | - | - | OK | - | OK |

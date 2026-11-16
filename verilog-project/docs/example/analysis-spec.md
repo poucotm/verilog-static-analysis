@@ -20,7 +20,15 @@
 - m_axis (tvalid / tready / tdata[63:0] / tlast) 는 AXI4-Stream 규칙을 지켜야 한다
 - 받는 쪽은 m_axis_tready 를 최대 16클럭까지 0 으로 둘 수 있다
 - done 은 마지막 출력 beat 가 나간 다음 클럭에 1클럭 pulse 로 낸다
-- 처리율 목표: 입력 1 beat 당 1클럭 (back-to-back 입력을 멈추지 않고 처리)
+
+## 의도된 동작
+- srst 가 오면 처리 중이던 프레임은 버린다 (남은 출력 beat 를 내지 않는다)
+
+## 성능 목표
+- 처리율: 입력 1 beat 당 1클럭 (back-to-back 입력을 멈추지 않고 처리)
+
+## 전력 목표
+- 합성 도구가 enable 에서 클럭 게이팅을 자동으로 넣는다
 
 ## 요청 사항
 - 마지막 beat 의 tkeep 이 부분 유효 (예: 8'h0F) 일 때 출력 데이터 바이트 정렬이 맞는지 확인
