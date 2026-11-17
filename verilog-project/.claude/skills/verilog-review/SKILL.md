@@ -74,7 +74,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 ## 3. Procedure
 
 ### 3.0 Pre-check (before analysis, mandatory)
-Once top is set (and the source folder, `source` by default), ask the two questions below **separately and in order** **before the actual analysis**. Never put both questions in one message. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after both answers are in: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for answers.
+Once top is set (and the source folder, `source` by default), show the composition below and ask for confirmation **before the actual analysis**. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after that answer: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for the answer. There is no question about the PDF report: it is **always** made after the analysis (3.6).
 
 **(1) Quick composition scan** — do not read logic; only skim module definitions and instances.
 1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files under the source folder.
@@ -110,27 +110,17 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 - If a module is instantiated in several places, join the instance locations with `,` (if many, `외 n곳`).
 - If there are many modules (more than 30), group analyzed modules per file into one row, but list every graybox, black box, unused, and needs-confirmation item.
 
-**Question (1)** — under the table above, ask only this and wait for the answer. Do not include the PDF question.
+**Question** — under the table above, ask only this and wait for the answer.
 > 위 구성이 맞나요? 맞으면 다음으로 넘어갑니다.
 
-**Handling the answer to (1)**
-- **Never skip the composition check.** Even if the request already says whether to make a PDF (e.g., "PDF까지 만들어줘"), the composition must be confirmed.
-- "맞아", "네", "ㅇㅇ", "OK" mean the composition is correct. Then go to (2). If (2) is not asked (the request already states the report choice), start the analysis right away.
+**Handling the answer**
+- **Never skip the composition check**, even if the request already mentions a PDF or report.
+- "맞아", "네", "ㅇㅇ", "OK" mean the composition is correct. Start the analysis right away; ask nothing else.
 - If the user says the composition is wrong, fix it, show the table again, and get confirmation again.
   - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. The same applies when specs in `docs/` are changed or added.
   - If the user says something like "이번 분석에서는 X를 그레이박스로 봐줘", follow it and append `(사용자 지정)` to the 그레이박스 cell of the result file's overview.
 - If there are 확인 필요 items, do not analyze until the user decides (e.g., which of the duplicate definitions to use).
 - Run the composition check on every re-analysis (files may have changed). Then analyze as in section 2 (re-analysis in the same session is a full analysis).
-
-**(2) PDF report choice** — after the user confirms the composition, ask this **in a separate message** and wait for the answer.
-> 분석을 마친 뒤 PDF 보고서(`/verilog-report`)까지 한 번에 만들까요?
-> 1. 분석 + PDF 보고서
-> 2. 분석만 (보고서는 나중에 요청)
-
-**Handling the answer to (2)**
-- If the request already states the report choice (e.g., "PDF까지 만들어줘", "분석만 해줘"), do not ask (2); just follow it.
-- "1", "네", "ㅇㅇ", "OK", "PDF까지" mean analysis + PDF; "2", "아니요", "분석만" mean analysis only. Start the analysis as soon as you get the answer.
-- Remember the choice as a working note for 3.6. On re-analysis in the same session, do not ask again unless the user changes it.
 
 **After confirmation**
 - Use the confirmed composition as is in steps 1–2 of 3.1. If you find something during analysis that differs from the confirmed composition (a missed instance, etc.), analyze according to the actual code and state what differed, separately, in the 3.6 user report.
@@ -295,9 +285,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
    - Tokens are read from the session log (`~/.claude/projects/<project key>/*.jsonl`). Total tokens are the sum of input, output, cache read, and cache creation; most of it is cache read.
    - 사용모델 and 노력 (effort) are also read from the same session log, from responses after the analysis start (e.g., `Opus 5.5`, `medium`). If they changed during analysis, they are listed by usage, most first. Claude never guesses them.
    - If `python` is missing, try `python3` once more. If that also fails, replace the six cells with "측정 불가". Do not stop the analysis because measurement failed.
-3. Finish according to the PDF answer from the 3.0 pre-check.
-   - **1 (analysis + PDF)**: after the step-2 measurement, continue with the `verilog-report` skill procedure to make the PDF. Do not ask the user again. Report once at the end: count per severity, titles of severity "상" issues, result file and PDF paths (`verilog-report` section 6). If PDF tools are missing, ask as in `verilog-report` 5.1.
-   - **2 (analysis only)**: report the count per severity, titles of severity "상" issues, and the result file path, and mention that a PDF report can be made with `verilog-report`.
+3. **Always make the PDF report.** After the step-2 measurement, continue with the `verilog-report` skill procedure without asking the user. Report once at the end: count per severity, titles of severity "상" issues, result file and PDF paths (`verilog-report` section 6). The only question allowed is the one in `verilog-report` 5.1, when PDF tools are missing.
    - Time and tokens spent on the report are not included in the overview values (measurement already finished in step 2). The measurement script is still **the last tool call of the analysis**; the report comes after it.
    - The user report is in Korean. It also includes the per-request results for the spec's 분석 요청 사항 (section 1) and any differences from the confirmed composition (3.0).
    - End the user report with this line as is: `수정을 반영한 뒤 다시 분석할 때는 /clear로 새 세션을 시작해 주세요. 같은 세션에서는 앞 분석 내용에 끌려 새 문제를 놓치기 쉽습니다.`
