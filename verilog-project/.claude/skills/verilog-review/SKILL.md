@@ -66,6 +66,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 - If a file with the same name exists for the same day, append `_2`, `_3`. Never overwrite an existing file.
 - Do not save working notes such as relationship or flow tables as separate files.
 - Do not consult previous result files. Analyze everything from the current code every time.
+- **Re-analysis in the same session is a full analysis.** Earlier working notes, tables, coverage cells, issues, and conclusions in this conversation are not used, even if they are still in context. Reread every source file, rebuild every 3.2 table from scratch, and judge every cell again. Do not check earlier issues off as "fixed" and stop there: an earlier issue being gone says nothing about the rest of the code. A re-analysis takes about as long as the first one.
 - Follow the format in section 7. The format is designed so that `verilog-report` can turn it into a PDF as is.
 
 ---
@@ -119,7 +120,7 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
   - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. The same applies when specs in `docs/` are changed or added.
   - If the user says something like "이번 분석에서는 X를 그레이박스로 봐줘", follow it and append `(사용자 지정)` to the 그레이박스 cell of the result file's overview.
 - If there are 확인 필요 items, do not analyze until the user decides (e.g., which of the duplicate definitions to use).
-- Run the composition check on every re-analysis (files may have changed).
+- Run the composition check on every re-analysis (files may have changed). Then analyze as in section 2 (re-analysis in the same session is a full analysis).
 
 **(2) PDF report choice** — after the user confirms the composition, ask this **in a separate message** and wait for the answer.
 > 분석을 마친 뒤 PDF 보고서(`/verilog-report`)까지 한 번에 만들까요?
@@ -148,9 +149,10 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 ### 3.2 Build the relationship model (working notes, not saved)
 
 **(1) Register update table** — for **every** register. Control registers (state, counter, flag, valid) get one row each. Data registers may be grouped into one row per pipeline stage or bus when they share the same update condition, but **none may be left out**.
-| Register | Update conditions and priority | Load enable | Signals that decide the value | Reset value | Readers |
+| Register | Update conditions and priority | Load enable | Signals that decide the value | Reset / clear value | Readers |
 - **Load enable**: the condition guarding the assignment, whatever its name. Write `매 클럭` if the register is assigned unconditionally. Every `매 클럭` row must be judged in M13 (4.9 C "Missing register enable"); do not fill the M13 cell before every such row has been judged.
 - **Readers**: a register with no reader, especially a delayed enable/valid, is a clue (section 0, 4.9 C).
+- **Reset / clear value**: the value set by reset and by every synchronous clear (clear, resync, flush, soft reset), or `없음`. Judge **every row** twice: (a) `없음` on a register used for control (mux select, FSM input, enable, valid, flag) → M1 (4.8); (b) a reset/clear value on a data register that is always overwritten before anything reads it (it never reaches an output or a decision) → M9 "Unneeded reset". Do not fill the M1 or M9 cell before every row has been judged.
 - Use this table to check whether the conditions updating the same register overlap or leave combinations uncovered.
 
 **(2) Event flow table** — for each control signal (valid, ready, req, ack, start, done, irq, flush, error, etc.)
@@ -166,6 +168,12 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 - **Serial depth**: count the operations a value passes through in series between two registers (or port to register). For a loop, depth = iterations × depth of one iteration when each iteration uses the result of the previous one (e.g., a running count that selects the write position). Use the default parameter values and also say how the depth grows with the parameter.
 - None may be left out; operations of the same kind in a `generate`/loop may share one row.
 - This list is the input to M9 (4.9 B) and M15 (4.14). Do not fill the M9 cell before every row has been judged for timing and compared with the other rows for duplication.
+
+**(5) Clear event table** — for **every** event that clears, restarts, or aborts work in the middle (reset release, synchronous clear, resync, flush, abort, soft reset, error end), one row per event and side
+| Event | Side | Cycles from the request until it takes effect and until it is released | What happens on this side during those cycles and in the first cycle after release |
+- **Side**: write all three for each event: `입력` (input handshake: is ready/accept still given while the clear is pending, in effect, or just released, and is an item accepted then kept?), `출력` (an output item or handshake in flight: is it withdrawn before it is taken, is a frame left without its `last`?), `내부` (which state registers are cleared and which keep their value).
+- A problem found on one side does not end the event: judge the other sides too.
+- This table is the input to M11 (내부), M12 (items accepted and dropped on the `입력` side, items withdrawn or frames cut on the `출력` side), and M7 (control events). Do not fill those cells before every row has been judged.
 
 ### 3.3 Check checklist (fixed order)
 To cover the same scope in the same order every session, follow the order below **exactly**. Do not skip or reorder.
@@ -245,7 +253,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
 | Lost/duplicated events | Is every event consumed exactly once each time it is generated? What if it arrives while the consumer is busy? Back to back? Across clock domains? |
 | Reset dependence | For the first few cycles after reset release, are all control signals valid? Does a module released from reset earlier send signals to one still in reset? |
 | Capacity | After the stop signal (ready low, almost_full) is raised, how many more items still arrive, and is there always room for them? |
-| Leftover state | When a transaction ends (normally, by abort, error, flush, or soft reset), which registers keep their value, and does the next transaction read them before overwriting them? After a partial clear, are all related registers consistent? |
+| Leftover state | When a transaction ends (normally, by abort, error, flush, or soft reset), which registers keep their value, and does the next transaction read them before overwriting them? After a partial clear, are all related registers consistent? While a clear is pending, in effect, or just released, does the block still accept input it then drops, or withdraw output that was not taken? |
 | Order/count | Can a later item overtake an earlier one on any path? Does the number of items going out equal the number that came in, with exactly one `last` per frame? |
 | Config consistency | Is every use of a configuration value within one transaction based on the same sampled value? What if it changes midway? |
 | Power | Which registers are assigned every clock with no enable although their input can change only after an enable/valid? Is there a delayed enable that nothing uses? Which registers, operator inputs, and memory enables change in cycles where their result is not used? What keeps running while the block is idle or disabled? Can one enable stop them? |
@@ -258,6 +266,15 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
 - For optimization candidates, also show a cycle table whenever the waste shows over time (idle cycles, loads or toggling in unneeded cycles, a condition that is never true in the cycle it is tested); otherwise write structural evidence as a value or structure table. For cycle candidates, write the current vs. improved cycle comparison and the added cost (4.9 A). For power candidates, write the width involved and the share of cycles in which the load or toggling is unneeded (4.9 C).
 - If the path or evidence does not hold, drop the candidate. Do not record why it was dropped. That cell becomes `OK`.
 - For each proven issue, decide severity and the condition number (e.g., `상-2`) with section 7 "심각도 판정 절차" (severity procedure).
+
+**Fix re-check** — after every issue has its fix diff, and before 3.5:
+1. Assume **all** proposed fixes are applied together. List the blocks they change and the logic that reads any changed signal.
+2. On that changed code, judge again M9 (new dead or duplicated logic, e.g., storage that a fix leaves unused in some configuration), M13, M15, and the functional checks whose cells cover the changed logic. Check every parameter/`generate` configuration the fix touches.
+3. Handle what you find:
+   - a problem the fix itself creates → change that fix's diff so it no longer happens;
+   - a problem that already exists but becomes reachable or visible only after a fix (e.g., the FSM now gets past a state where it used to hang) → raise it as its own issue in this result;
+   - two fixes changing the same lines → merge them, and say in both issues that they go together.
+4. An improvement found while writing a fix ("레지스터를 더 줄일 수 있다") is never left as a remark: put it in the diff, or raise it as its own issue.
 
 ### 3.5 Numbering and ordering
 1. Sort by severity (상 → 중 → 하). Within the same severity, put the most solidly proven first.
@@ -283,6 +300,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
    - **2 (analysis only)**: report the count per severity, titles of severity "상" issues, and the result file path, and mention that a PDF report can be made with `verilog-report`.
    - Time and tokens spent on the report are not included in the overview values (measurement already finished in step 2). The measurement script is still **the last tool call of the analysis**; the report comes after it.
    - The user report is in Korean. It also includes the per-request results for the spec's 분석 요청 사항 (section 1) and any differences from the confirmed composition (3.0).
+   - End the user report with this line as is: `수정을 반영한 뒤 다시 분석할 때는 /clear로 새 세션을 시작해 주세요. 같은 세션에서는 앞 분석 내용에 끌려 새 문제를 놓치기 쉽습니다.`
 
 ---
 
@@ -372,6 +390,7 @@ Write cycle-viewpoint issues with **both gain and cost**.
 Do not rely on noticing. Go through the **operation list** (3.2 (4)) row by row:
 1. **Timing, every row**: take the serial depth of the row and add the operations before and after it on the same register-to-register (or port-to-register) path. Find the deepest path of the module and judge it against 중-6. A loop whose iterations depend on one another (running count, priority search, carry from one iteration to the next) is a chain as long as the loop: with the default parameters, write the depth as a number.
 2. **Duplication, every pair of the same kind**: compare the inputs of rows with the same operator. Same inputs, or inputs where one result can be derived from the other (two subtractions of the same pointers selected by a mux, the same sum computed in two branches), is a duplication candidate. Check with a value table that the single operation gives the same result in every case.
+   - **Duplicated information, every register and every stored bit**: also go through the register table (3.2 (1)) and the extra bits stored next to data in a FIFO/memory (markers, flags, tags). For each, ask whether the information it carries is already available from another register at the cycle where it is used (same value, opposite value, or derivable, e.g., "first item of a frame" = "the previous item taken was the last"). **When one duplicate is found, search for every other signal carrying the same information** (delayed copies, markers written at the input side, flags rebuilt at the output side) before closing M9.
 3. **Sharing**: rows with the same operator whose results are used only in mutually exclusive cycles.
 4. Then check the items below, which are not tied to one operation.
 
@@ -424,6 +443,7 @@ The reset state is checked in 4.8; here check the **boundary between one transac
 - For each, at **every** way a transaction can end (normal done, abort, error, flush, early `last`, timeout): is it cleared or reloaded before the next transaction reads it? A register cleared only on the normal path is the typical defect.
 - A register cleared at the *start* of the next transaction: is it read in that same cycle, before the clear takes effect?
 - Back-to-back: when the last cycle of transaction N and the first cycle of N+1 are the same or adjacent, does the clear of N wipe the first data of N+1, or does the value of N leak into N+1?
+- Use the clear event table (3.2 (5)) row by row. A clear request often reaches the logic one or more cycles late (a registered clear). Check the input handshake over that whole span: if ready stays 1 while the clear drops what is accepted, the item is lost (record it in M12).
 - Prove it with a cycle table spanning two transactions: the first leaves the value, the second produces the wrong result.
 
 ### 4.12 Order / count conservation (output corruption, lost/duplicated data)
@@ -674,7 +694,7 @@ init → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.6 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.11 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
 - **참고 스펙**: paths of the spec files under `docs/` used for the analysis (those confirmed in 3.0). Join multiple with `, `. **If no spec was used, omit this row.** Never list `docs/example/` files.
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".
@@ -735,7 +755,7 @@ The diff must be **complete enough to apply as it is**. A reader should be able 
 - **Copy original lines exactly as in the source** (indentation, names, spacing). Context lines start with a space, removed lines with `-`, added lines with `+`.
 - **Show that the fix works**: below the diff, write one or two lines saying which cycle of the cycle table changes and to what value (e.g., `수정 후: cycle 5에서 wrstt가 0으로 남아 두 번째 프레임이 생기지 않는다`). If the change is not obvious from that, add a short "수정 후" cycle table.
 - **State side effects**: if the fix adds a cycle of latency, changes the timing of another signal, or needs a matching change elsewhere (a parent module, a delay chain length), say so and include that change in the diff.
-- **One fix as a diff**: if there are alternatives, show the recommended one as the diff and mention the others in one line each.
+- **One fix as a diff**: if there are alternatives (other ways to fix the same problem), show the recommended one as the diff and mention the others in one line each. A further improvement beyond this issue is not an alternative: put it in the diff or raise it as its own issue (3.4 "Fix re-check").
 - A fix that only removes lines still shows the surrounding context lines so the place can be found.
 
 ### Design structure (설계 구조)
@@ -824,6 +844,9 @@ Go through the list below **from the top, in order**, and take the grade of the 
 - A functional issue without a cycle table (the only exception is an M15 issue shown with concrete values, 3.4); a cycle table without its reading lines
 - Verilog expressions or shorthand cycle labels in the prose of 요약 / 발생 가능한 문제 / 문제 설명
 - A fix diff that shows only the key line, cuts a block open, or leaves out the declaration of a new signal
+- Mentioning a further improvement only in words, without a diff or its own issue
+- Reusing working notes, tables, coverage, or conclusions from an earlier analysis in the same session
+- Filling M1, M7, M9, M11, M12, or M13 cells before every row of the 3.2 tables they depend on has been judged
 - Asserting black-box internal behavior by guessing
 - Raising problems that start and end inside a graybox; proposing fixes to graybox code
 - Using Verilog files outside the source folder in the analysis
