@@ -230,7 +230,12 @@ At the very end of the report, add `## 부록: 점검 ID와 심각도 기준`. C
    - `0`: PDF created
    - `2` (tools missing), `3` (no Korean font): **ask the user** following 5.1.
    - Other errors (LaTeX errors, etc.): if the error message shows something fixable in the Markdown, fix it and try once more; if it still fails, finalize the `.md` as the report and tell the user the error.
-5. On Windows, run with Git Bash. The `폰트: … — 번들 글꼴(assets/fonts)` line in the conversion log shows whether the bundled fonts were used.
+5. **Open the folder** — once the PDF is created (exit code `0`) and checked (step 3), run this once without asking:
+   ```bash
+   bash .claude/skills/verilog-report/scripts/open_folder.sh reports/pdf/<top>_report_<date tag>.pdf
+   ```
+   It opens `reports/pdf` with the new PDF selected (Windows Explorer, macOS Finder; Linux opens the folder only). If it prints `폴더 열기 생략` or fails, just go on; its result never changes the flow. Do not run it when only the `.md` report was made, and do not run it again on retries.
+6. On Windows, run with Git Bash. The `폰트: … — 번들 글꼴(assets/fonts)` line in the conversion log shows whether the bundled fonts were used.
 
 ### 5.1 When the environment cannot make a PDF
 If tools or Korean fonts are missing and a PDF cannot be made, with the `.md` report already written, **ask the user once** (in Korean) and proceed by the answer. Never install without asking.
@@ -260,5 +265,5 @@ Question (send in Korean as is):
 ## 6. Final report
 
 Tell the user only the following, briefly, in Korean.
-- path of the generated PDF (if no PDF could be made, the `.md` path and the reason)
+- path of the generated PDF (if no PDF could be made, the `.md` path and the reason), and `보고서 폴더를 열었습니다.` if `open_folder.sh` printed `폴더 열기:`
 - count per severity and titles of severity "상" issues

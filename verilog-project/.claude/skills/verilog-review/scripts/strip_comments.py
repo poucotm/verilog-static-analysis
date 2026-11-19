@@ -7,7 +7,7 @@
 - 문자열 "..." 안과 escaped identifier(\\name) 안의 //, /* 는 주석으로 보지 않는다.
 - pragma 주석(synopsys, synthesis, pragma, translate_off 등으로 시작)은 남긴다.
 - --spec 을 주면 스펙 파일(analysis-spec.md)의 <!-- --> 주석을 지운 사본을 --out 에 만들고,
-  "## Top" 절의 내용(없으면 "없음")을 출력한다.
+  "## TOP" 절의 내용(없으면 "없음")을 출력한다.
 - --out 은 reports/.nocomment 이거나 그 아래여야 한다. 실행할 때마다 지우고 새로 만든다.
 - 원본은 읽기만 한다.
 """
@@ -93,7 +93,7 @@ def spec_copy(path, out):
     """스펙 파일에서 <!-- --> 주석을 지운 사본을 만들고 Top 절과 내용 유무를 출력한다."""
     if not os.path.isfile(path):
         print(f'스펙: 없음 ({path} 없음)')
-        print('스펙 Top: 없음')
+        print('스펙 TOP: 없음')
         return
     text, enc = read(path)
     new = MD_COMMENT.sub(lambda m: ''.join(c for c in m.group(0) if c in '\r\n'), text)
@@ -120,7 +120,7 @@ def spec_copy(path, out):
         print(f'스펙: {rel} (주석 밖 내용 {items}줄)')
     else:
         print(f'스펙: {rel} (주석 밖 내용 없음 = 참고 스펙 없음)')
-    print('스펙 Top: ' + (' / '.join(top) if top else '없음'))
+    print('스펙 TOP: ' + (' / '.join(top) if top else '없음'))
 
 
 def main():

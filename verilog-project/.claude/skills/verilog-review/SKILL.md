@@ -50,7 +50,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 - **External input assumption**: unless the spec (`analysis-spec.md`) constrains them, assume top inputs may arrive in any order and timing allowed by the protocol. If the spec constrains them, follow the constraint.
 - Do not assume design intent. Read the spec first (code comments are not read; see "Analyze the comment-free copy only").
   - The spec is the single file `analysis-spec.md` in the project folder. Read it **only through the comment-free copy `reports/.nocomment/analysis-spec.md`** made by `strip_comments.py --spec` (3.0 (1) step 0). Never open the original: everything inside `<!-- -->` (writing guide and examples) is never read, interpreted, or counted. If nothing is left outside the comments, there is no spec.
-  - The `## Top` section gives the top module name only. It is not a constraint and is not counted.
+  - The `## TOP` section gives the top module name only. It is not a constraint and is not counted.
   - Behavior listed under the spec's "의도된 동작" (intended behavior) is not raised as an issue by itself. Other problems caused by that behavior are raised.
   - If spec items have IDs (constraint `C1`, intended behavior `I1`, analysis request `R1`, etc.), cite the ID in the issue's 문제 설명 / 심각도 근거 and in the user report (e.g., "스펙 C2에 따라 중간 beat의 부분 wkeep은 가정하지 않음").
   - If the spec has "성능 목표" (performance targets), use them as the baseline for optimization (4.9) judgments.
@@ -59,7 +59,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 - **Read only**: never modify RTL. Show fixes only as diffs in the result file, complete enough to apply as they are (section 7 "Fix proposal").
 - **Analysis scope**: analyze only Verilog files under the session's source folder. Modules unreachable from top are not analyzed; only list them as "top 미사용 모듈".
 - **The source folder defaults to `source`.** If the user does not name a source folder, use `source` and show it in the 3.0 pre-check as `소스 폴더: source (기본값)`. If `source` does not exist, do not analyze; ask for the source folder.
-- If top is not set by the user or by the spec's `## Top`, do not start; send the session-start guide from CLAUDE.md (TOP 안내 when no spec Top).
+- If top is not set by the user or by the spec's `## TOP`, do not start; send the session-start guide from CLAUDE.md (TOP 안내 when no spec Top).
 
 ---
 
@@ -94,7 +94,7 @@ Once top is set (and the source folder, `source` by default), show the compositi
    - the number of constraint items (입력·출력 조건), intended behaviors, and analysis request items
    - if a signal or module name in the spec is not in the code (different name, or unclear which port it means), put it under **확인 필요**.
    - If the script printed `스펙: 없음` or `주석 밖 내용 없음`, write "참고 스펙: 없음". With no spec, assume every input order/timing the protocol allows (section 1).
-   - If the top the user named differs from the spec's `## Top`, use the user's top and write it on the 참고 스펙 line (`스펙 Top(<name>)과 다름`).
+   - If the top the user named differs from the spec's `## TOP`, use the user's top and write it on the 참고 스펙 line (`스펙 TOP(<name>)과 다름`).
 
 Message format (sent in Korean exactly like this; drop rows for categories that do not apply, and drop the 미사용 / 확인 필요 lines if there are none. Always write the 참고 스펙 line):
 ```
