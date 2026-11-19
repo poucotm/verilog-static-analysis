@@ -37,6 +37,9 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 ## 1. Principles
 
 - **No tools**: do not run simulators, lint, synthesis, or formal tools. Do not create testbench or assertion files. Only read and search files.
+- **Analyze the comment-free copy only**: the analysis reads `reports/.nocomment/`, a copy of the source folder with every comment blanked out (3.0 (1) step 0). Line numbers are the same as the original. Never open or Grep the original `.v` `.sv` `.vh` `.svh` files in the source folder; the only exception is copying diff lines in the fix proposal (section 7). Code comments are never evidence or design intent.
+  - Pragma comments (`synopsys`, `synthesis`, `pragma`, `translate_off`/`translate_on`, `full_case`, `parallel_case`, etc.) are kept in the copy. Read and apply them: code between `translate_off` and `translate_on` is not hardware.
+  - Paths in the result file (위치, coverage, notes) are the original paths in the source folder, not `reports/.nocomment/…`.
 - **Static proof**: evidence is code and cycle tables. A cycle table is the default evidence for every issue, optimization issues included; only an issue with nothing happening over time (duplicated logic, excess width, depth of a combinational path) uses a value or structure table instead (section 6). For area/timing optimization issues, give structural evidence (duplicate locations, value-range calculation, number of operations on the path); for cycle optimization, give a current vs. improved cycle comparison and the added cost; for power, give the width involved and the share of cycles in which the load or toggling is unneeded.
 - **Think in relationships**: not "this signal is wrong" but "the relationship that A and B must hold breaks under this condition".
 - **Trace back from the symptom**: fix the symptom first, then work backward to the inputs and conditions needed to produce it. Check that those conditions are actually **reachable**.
@@ -45,7 +48,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
   - If it depends on the spec, a black box, or external input conditions, state in "문제 설명" under which condition it becomes a problem, and also put black-box conditions in "블랙박스 확인 사항".
   - Do not show a separate confidence level.
 - **External input assumption**: unless the spec (`docs/`) constrains them, assume top inputs may arrive in any order and timing allowed by the protocol. If the spec constrains them, follow the constraint.
-- Do not assume design intent. Read the specs in `docs/` and the code comments first.
+- Do not assume design intent. Read the specs in `docs/` first (code comments are not read; see "Analyze the comment-free copy only").
   - Files under `docs/example/` are writing examples, so **never read them** (do not open them even if they show up in Glob/Grep results).
   - The `<!-- 작성 안내 … -->` comment in a spec file is a writing guide for people. Do not use it as analysis evidence and do not count it in the constraint/request counts. Everything outside the comment is used as spec.
   - Behavior listed under the spec's "의도된 동작" (intended behavior) is not raised as an issue by itself. Other problems caused by that behavior are raised.
@@ -77,7 +80,8 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 Once top is set (and the source folder, `source` by default), show the composition below and ask for confirmation **before the actual analysis**. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after that answer: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for the answer. There is no question about the PDF report: it is **always** made after the analysis (3.6).
 
 **(1) Quick composition scan** — do not read logic; only skim module definitions and instances.
-1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files under the source folder.
+0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy (with the same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
+1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files under `reports/.nocomment/` (the copy of the source folder).
 2. Grep for `module <name>` definitions and build a module → file table. Mark modules in files inside a `graybox` folder as grayboxes (section 5.5).
 3. In each module, find instance statements (`<module> [#(...)] <instance> (`) and, following from top, collect the modules in use. Keywords (`if`, `assign`, `always`, etc.) and function/task calls are not instances. Read short snippets only for ambiguous lines.
 4. Classify:
@@ -470,7 +474,7 @@ A bit-width warning by itself is lint and out of scope. Here follow the **value 
 ## 5. Black-Box Modules
 
 ### Identification
-1. Build the list of `module` definitions from all Verilog files under the source folder.
+1. Build the list of `module` definitions from all Verilog files under the source folder (read through the copy `reports/.nocomment/`).
 2. Classify modules that are instantiated but have no definition as black boxes.
 3. Record the kind. In both cases the internals are unknown.
    - **벤더/IP** (vendor/IP): looks like an FPGA primitive or IP core (e.g., `BUFG`, `xpm_*`, `altsyncram`, clock generator IP)
@@ -682,7 +686,7 @@ init → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.11 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.12 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
 - **참고 스펙**: paths of the spec files under `docs/` used for the analysis (those confirmed in 3.0). Join multiple with `, `. **If no spec was used, omit this row.** Never list `docs/example/` files.
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".
@@ -741,6 +745,7 @@ The diff must be **complete enough to apply as it is**. A reader should be able 
 - **Do not cut a block open**: if the diff shows the opening of an `always`, `function`, `case`, `generate`, or `begin`, it also shows its closing line. A long unchanged middle part may be shortened to one line `// ... (변경 없음)`; never drop it silently.
 - **Several places → several diff blocks**, in source order. Above each block write one Korean line saying which part it is (e.g., `신호 선언`, `쓰기 쪽 always 블록`, `rdpop 조건`).
 - **Copy original lines exactly as in the source** (indentation, names, spacing). Context lines start with a space, removed lines with `-`, added lines with `+`.
+  - Take the context and `-` lines from the **original** file (with its comments), so the diff applies to it as is. Open only the diff range with Read offset/limit, after the issue is already proven. The comments in those lines are not evidence.
 - **Show that the fix works**: below the diff, write one or two lines saying which cycle of the cycle table changes and to what value (e.g., `수정 후: cycle 5에서 wrstt가 0으로 남아 두 번째 프레임이 생기지 않는다`). If the change is not obvious from that, add a short "수정 후" cycle table.
 - **State side effects**: if the fix adds a cycle of latency, changes the timing of another signal, or needs a matching change elsewhere (a parent module, a delay chain length), say so and include that change in the diff.
 - **One fix as a diff**: if there are alternatives (other ways to fix the same problem), show the recommended one as the diff and mention the others in one line each. A further improvement beyond this issue is not an alternative: put it in the diff or raise it as its own issue (3.4 "Fix re-check").
@@ -834,6 +839,7 @@ Go through the list below **from the top, in order**, and take the grade of the 
 - A fix diff that shows only the key line, cuts a block open, or leaves out the declaration of a new signal
 - Mentioning a further improvement only in words, without a diff or its own issue
 - Reusing working notes, tables, coverage, or conclusions from an earlier analysis in the same session
+- Reading or grepping the original source files instead of `reports/.nocomment/` (except copying diff lines), or using code comments as evidence
 - Filling M1, M7, M9, M11, M12, or M13 cells before every row of the 3.2 tables they depend on has been judged
 - Asserting black-box internal behavior by guessing
 - Raising problems that start and end inside a graybox; proposing fixes to graybox code
