@@ -47,10 +47,10 @@ This classification is only a viewpoint for analysis. Do not write a classificat
   - If it may not be a problem depending on design intent, say so in one sentence in "문제 설명".
   - If it depends on the spec, a black box, or external input conditions, state in "문제 설명" under which condition it becomes a problem, and also put black-box conditions in "블랙박스 확인 사항".
   - Do not show a separate confidence level.
-- **External input assumption**: unless the spec (`docs/`) constrains them, assume top inputs may arrive in any order and timing allowed by the protocol. If the spec constrains them, follow the constraint.
-- Do not assume design intent. Read the specs in `docs/` first (code comments are not read; see "Analyze the comment-free copy only").
-  - Files under `docs/example/` are writing examples, so **never read them** (do not open them even if they show up in Glob/Grep results).
-  - The `<!-- 작성 안내 … -->` comment in a spec file is a writing guide for people. Do not use it as analysis evidence and do not count it in the constraint/request counts. Everything outside the comment is used as spec.
+- **External input assumption**: unless the spec (`analysis-spec.md`) constrains them, assume top inputs may arrive in any order and timing allowed by the protocol. If the spec constrains them, follow the constraint.
+- Do not assume design intent. Read the spec first (code comments are not read; see "Analyze the comment-free copy only").
+  - The spec is the single file `analysis-spec.md` in the project folder. Read it **only through the comment-free copy `reports/.nocomment/analysis-spec.md`** made by `strip_comments.py --spec` (3.0 (1) step 0). Never open the original: everything inside `<!-- -->` (writing guide and examples) is never read, interpreted, or counted. If nothing is left outside the comments, there is no spec.
+  - The `## Top` section gives the top module name only. It is not a constraint and is not counted.
   - Behavior listed under the spec's "의도된 동작" (intended behavior) is not raised as an issue by itself. Other problems caused by that behavior are raised.
   - If spec items have IDs (constraint `C1`, intended behavior `I1`, analysis request `R1`, etc.), cite the ID in the issue's 문제 설명 / 심각도 근거 and in the user report (e.g., "스펙 C2에 따라 중간 beat의 부분 wkeep은 가정하지 않음").
   - If the spec has "성능 목표" (performance targets), use them as the baseline for optimization (4.9) judgments.
@@ -59,7 +59,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 - **Read only**: never modify RTL. Show fixes only as diffs in the result file, complete enough to apply as they are (section 7 "Fix proposal").
 - **Analysis scope**: analyze only Verilog files under the session's source folder. Modules unreachable from top are not analyzed; only list them as "top 미사용 모듈".
 - **The source folder defaults to `source`.** If the user does not name a source folder, use `source` and show it in the 3.0 pre-check as `소스 폴더: source (기본값)`. If `source` does not exist, do not analyze; ask for the source folder.
-- If top is not set, do not start; send the session-start guide from CLAUDE.md.
+- If top is not set by the user or by the spec's `## Top`, do not start; send the session-start guide from CLAUDE.md (TOP 안내 when no spec Top).
 
 ---
 
@@ -80,7 +80,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 Once top is set (and the source folder, `source` by default), show the composition below and ask for confirmation **before the actual analysis**. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after that answer: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for the answer. There is no question about the PDF report: it is **always** made after the analysis (3.6).
 
 **(1) Quick composition scan** — do not read logic; only skim module definitions and instances.
-0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy (with the same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
+0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --spec analysis-spec.md --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy (with the same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
 1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files under `reports/.nocomment/` (the copy of the source folder).
 2. Grep for `module <name>` definitions and build a module → file table. Mark modules in files inside a `graybox` folder as grayboxes (section 5.5).
 3. In each module, find instance statements (`<module> [#(...)] <instance> (`) and, following from top, collect the modules in use. Keywords (`if`, `assign`, `always`, etc.) and function/task calls are not instances. Read short snippets only for ambiguous lines.
@@ -90,10 +90,11 @@ Once top is set (and the source folder, `source` by default), show the compositi
    - **블랙박스** (black box): instantiated but with no definition in the source folder (vendor/IP vs. 미제공, section 5)
    - **미사용** (unused): defined but unreachable from top (not analyzed)
    - **확인 필요** (needs confirmation): duplicate definitions with the same name, `` `include `` files missing from the source folder, lines where it is unclear whether they are instances
-5. **Check reference specs**: list files under `docs/` (exclude `docs/example/` and never open it). Read spec files (`.md` `.txt` `.pdf`, etc.) and count:
-   - the number of spec/interface constraint items and analysis request items
+5. **Check the spec**: read `reports/.nocomment/analysis-spec.md` (never the original) and count:
+   - the number of constraint items (입력·출력 조건), intended behaviors, and analysis request items
    - if a signal or module name in the spec is not in the code (different name, or unclear which port it means), put it under **확인 필요**.
-   - If `docs/` is missing or empty, write "참고 스펙: 없음". With no spec, assume every input order/timing the protocol allows (section 1).
+   - If the script printed `스펙: 없음` or `주석 밖 내용 없음`, write "참고 스펙: 없음". With no spec, assume every input order/timing the protocol allows (section 1).
+   - If the top the user named differs from the spec's `## Top`, use the user's top and write it on the 참고 스펙 line (`스펙 Top(<name>)과 다름`).
 
 Message format (sent in Korean exactly like this; drop rows for categories that do not apply, and drop the 미사용 / 확인 필요 lines if there are none. Always write the 참고 스펙 line):
 ```
@@ -108,7 +109,7 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 
 - 분석 n개 모듈 / n개 파일, 그레이박스 n개, 블랙박스 n개
 - 미사용 (분석하지 않음): old_ctrl (old_ctrl.v)
-- 참고 스펙: docs/analysis-spec.md (제약 4개, 의도된 동작 1개, 분석 요청 2개)   ← 없으면 "없음 (모든 입력 타이밍 가정)"
+- 참고 스펙: analysis-spec.md (제약 4개, 의도된 동작 1개, 분석 요청 2개)   ← 없으면 "없음 (모든 입력 타이밍 가정)"
 - 확인 필요: …   (예: 스펙의 `tready`가 s_axis_tready / m_axis_tready 중 어느 것인지 모호)
 ```
 - If a module is instantiated in several places, join the instance locations with `,` (if many, `외 n곳`).
@@ -121,7 +122,7 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 - **Never skip the composition check**, even if the request already mentions a PDF or report.
 - "맞아", "네", "ㅇㅇ", "OK" mean the composition is correct. Start the analysis right away; ask nothing else.
 - If the user says the composition is wrong, fix it, show the table again, and get confirmation again.
-  - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. The same applies when specs in `docs/` are changed or added.
+  - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. The same applies when `analysis-spec.md` is changed.
   - If the user says something like "이번 분석에서는 X를 그레이박스로 봐줘", follow it and append `(사용자 지정)` to the 그레이박스 cell of the result file's overview.
 - If there are 확인 필요 items, do not analyze until the user decides (e.g., which of the duplicate definitions to use).
 - Run the composition check on every re-analysis (files may have changed). Then analyze as in section 2 (re-analysis in the same session is a full analysis).
@@ -482,7 +483,7 @@ A bit-width warning by itself is lint and out of scope. Here follow the **value 
 4. If an `` `include ``d file is not in the source folder, it cannot be handled as a black box. Mark the modules depending on it as not analyzed and give the reason.
 
 ### What is known / what is not assumed
-- Known: port connections, parameter values passed, bit width / domain / nature of connected signals, specs in `docs/` (state that it is spec-based)
+- Known: port connections, parameter values passed, bit width / domain / nature of connected signals, the spec `analysis-spec.md` (state that it is spec-based)
 - Unknown without a spec: input→output latency, output clock domain, reset behavior and output values right after reset, handshake rules, whether outputs are pulse or level
 
 ### Judgment
@@ -580,7 +581,7 @@ Scenarios to try first:
 | 블랙박스 | n개: `모듈`, `모듈` |
 | 그레이박스 | n개: `모듈` (graybox 폴더, 흐름 분석만) |
 | 분석 소스 | (측정 중) |
-| 참고 스펙 | `docs/analysis-spec.md` |
+| 참고 스펙 | `analysis-spec.md` |
 | 분석시간 | (측정 중) |
 | 룰 버전 | v<버전> @ POUCO |
 | 사용모델 | (측정 중) |
@@ -686,9 +687,9 @@ init → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.13 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.15 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
-- **참고 스펙**: paths of the spec files under `docs/` used for the analysis (those confirmed in 3.0). Join multiple with `, `. **If no spec was used, omit this row.** Never list `docs/example/` files.
+- **참고 스펙**: `analysis-spec.md` if it was used (confirmed in 3.0). **If no spec was used, omit this row.**
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".
 - If there is unanalyzed scope or modules unused by top, add `| 미분석 범위 | … |` and `| top 미사용 모듈 | … |` rows at the end of the table.
 

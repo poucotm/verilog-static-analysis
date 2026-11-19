@@ -60,7 +60,7 @@ Do not change the order. The report always ends with the appendix `부록: 점�
 | 블랙박스 | n개: `모듈` |
 | 그레이박스 | n개: `모듈` (graybox 폴더, 흐름 분석만) |
 | 분석 소스 | 총 n개 파일, n줄 |
-| 참고 스펙 | `docs/analysis-spec.md` |
+| 참고 스펙 | `analysis-spec.md` |
 | 분석시간 | YYYY-MM-DD HH:MM |
 | 룰 버전 | v<버전> @ POUCO |
 | 사용모델 | … |
