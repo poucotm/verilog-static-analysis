@@ -7,7 +7,7 @@
 
 ## TOP
 <!--
-- top 은 sauvage
+- TOP 은 sauvage
 -->
 
 ## 입력 & 파라미터 조건

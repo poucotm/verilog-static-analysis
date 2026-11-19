@@ -8,7 +8,7 @@ Claude Code에서 Verilog / SystemVerilog RTL을 **코드만 읽어서** 분석�
 
 보고서 예시: [`report_template.pdf`](verilog-project/.claude/skills/verilog-report/assets/report_template.pdf)
 
-현재 룰 버전: **v0.8.15**
+현재 룰 버전: **v0.8.16**
 
 ## 무엇을 찾나
 

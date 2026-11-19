@@ -19,11 +19,11 @@ Follow not a single signal but the **relationships between signals** and the **p
 ### Problems to find
 | Problem | Examples |
 |------|----|
-| Output corruption | data corruption, misaligned values, wrong order (reordering across transactions), wrong arithmetic result (overflow, truncation, sign handling), wrong flag, leftover values from the previous transaction mixed into the next, wrong beat count / `tlast` position |
+| Output corruption | data corruption, misaligned values, wrong order (reordering across transactions), wrong arithmetic result (overflow, truncation, sign handling), wrong flag, leftover values from the previous transaction mixed into the next, wrong beat count / `tlast` position, output valid withdrawn or data changed before it is accepted |
 | Hang / deadlock | waiting for an event that never comes, mutual wait, ready/valid deadlock, counter never reaches its target, a gated clock that can never be turned on again |
 | Wrong state | unintended transition, undefined encoding, state out of sync with another FSM/counter, no way back |
 | Lost / duplicated events | missed pulse, level re-triggers, request handled twice, request without response, CDC loss, buffer overflow because backpressure arrives too late |
-| Reset/init-dependent misbehavior | spurious event right after reset, unreset value mixed into control, inconsistency after partial reset |
+| Reset/init-dependent misbehavior | spurious event right after reset, unreset value mixed into control, inconsistency after partial reset, asynchronous reset released without a synchronizer |
 | Not optimized | latency/throughput loss from idle cycles, serialization, or missing pipelining; duplicated logic/registers; logic with no effect on results; wider-than-needed bit widths; long combinational paths; power wasted by registers, operators, or memories that toggle while their result is unused |
 
 This classification is only a viewpoint for analysis. Do not write a classification code or column in the result file. Instead, **describe the symptom in words in the title and in "발생 가능한 문제".**
@@ -37,9 +37,10 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 ## 1. Principles
 
 - **No tools**: do not run simulators, lint, synthesis, or formal tools. Do not create testbench or assertion files. Only read and search files.
-- **Analyze the comment-free copy only**: the analysis reads `reports/.nocomment/`, a copy of the source folder with every comment blanked out (3.0 (1) step 0). Line numbers are the same as the original. Never open or Grep the original `.v` `.sv` `.vh` `.svh` files in the source folder; the only exception is copying diff lines in the fix proposal (section 7). Code comments are never evidence or design intent.
+- **Analyze the comment-free copy only**: the analysis reads `reports/.nocomment/`, a copy of the source folder with every comment blanked out (3.0 (1) step 0). Line numbers are the same as the original. Never open or Grep the original `.v` `.sv` `.vh` `.svh` files (or include files `.inc` `.h` `.vinc` `.svi`) in the source folder; the only exception is copying diff lines in the fix proposal (section 7). Code comments are never evidence or design intent.
   - Pragma comments (`synopsys`, `synthesis`, `pragma`, `translate_off`/`translate_on`, `full_case`, `parallel_case`, etc.) are kept in the copy. Read and apply them: code between `translate_off` and `translate_on` is not hardware.
   - Paths in the result file (위치, coverage, notes) are the original paths in the source folder, not `reports/.nocomment/…`.
+  - **Always pass `reports/.nocomment` as the path of every Glob and Grep.** A folder whose name starts with `.` is skipped by searches from the project folder, and such a search would find only the original files with comments.
 - **Static proof**: evidence is code and cycle tables. A cycle table is the default evidence for every issue, optimization issues included; only an issue with nothing happening over time (duplicated logic, excess width, depth of a combinational path) uses a value or structure table instead (section 6). For area/timing optimization issues, give structural evidence (duplicate locations, value-range calculation, number of operations on the path); for cycle optimization, give a current vs. improved cycle comparison and the added cost; for power, give the width involved and the share of cycles in which the load or toggling is unneeded.
 - **Think in relationships**: not "this signal is wrong" but "the relationship that A and B must hold breaks under this condition".
 - **Trace back from the symptom**: fix the symptom first, then work backward to the inputs and conditions needed to produce it. Check that those conditions are actually **reachable**.
@@ -80,8 +81,9 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 Once top is set (and the source folder, `source` by default), show the composition below and ask for confirmation **before the actual analysis**. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after that answer: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for the answer. There is no question about the PDF report: it is **always** made after the analysis (3.6).
 
 **(1) Quick composition scan** — do not read logic; only skim module definitions and instances.
-0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --spec analysis-spec.md --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy (with the same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
-1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files under `reports/.nocomment/` (the copy of the source folder).
+0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --spec analysis-spec.md --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy, **with `reports/.nocomment` as the search path** (same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
+   - If `python` is missing, try `python3` once more. If that also fails, do not analyze: tell the user that Python is needed to make the comment-free copy, and stop.
+1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files with `reports/.nocomment` as the path (the copy of the source folder). Include files (`.inc` `.h` `.vinc` `.svi`) are in the copy too.
 2. Grep for `module <name>` definitions and build a module → file table. Mark modules in files inside a `graybox` folder as grayboxes (section 5.5).
 3. In each module, find instance statements (`<module> [#(...)] <instance> (`) and, following from top, collect the modules in use. Keywords (`if`, `assign`, `always`, etc.) and function/task calls are not instances. Read short snippets only for ambiguous lines.
 4. Classify:
@@ -140,6 +142,11 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
    - top's input/output interfaces (what it receives, what it sends out)
    - main data flow (input → processing → output)
    - roles of the main sub-blocks
+6. **List parameter configurations.** For every module, list its parameters and every parameter-dependent branch (`generate if/case`, `if (PARAM …)` inside logic, widths and depths derived from parameters). Then list the configurations to check:
+   - a module instantiated in the design: every parameter set its instances actually pass (one configuration per distinct set);
+   - top (nobody instantiates it): every branch the code allows, unless the spec states the values in use;
+   - if the spec states the values in use, those values.
+   Every check in 3.3 is applied to **every listed configuration and every reachable branch**, not only to the default values. A problem that appears only with values no instance uses and the spec does not state is graded 하-1.
 
 ### 3.2 Build the relationship model (working notes, not saved)
 
@@ -177,16 +184,16 @@ To cover the same scope in the same order every session, follow the order below 
 - Go through modules one by one in `hier` block order (depth-first from top, in the order instances appear in the source). Even if a module has several instances, check the module only once.
 - Graybox modules get no in-module checks (M1–M15). Black boxes have no definition, so naturally none either. Both are handled only by X4 of the inter-module checks.
 
-**(2) In-module checks** — apply M1 through M15 in order to every module.
+**(2) In-module checks** — apply M1 through M15 in order to every module, for every parameter configuration listed in 3.1 step 6 (each `generate` branch in use is read and checked; checking only the default branch is not enough).
 
 | ID | Check | Technique |
 |:--:|------|:--:|
 | M1 | Reset/init: unreset registers used for control, the first cycles after reset release, reset release order between modules | 4.8 |
 | M2 | FSM: transition table, overlapping/missing conditions, default, reachability, recovery | 4.1, 4.2 |
-| M3 | Wait points: is the exit event guaranteed to come? | 4.4 |
+| M3 | Wait points: is the exit event guaranteed to come? Starvation by a fixed-priority arbiter | 4.4, 4.1 |
 | M4 | Condition combinations/priority: overlaps and gaps among conditions updating the same register | 4.1 |
 | M5 | Counters/pointers: boundaries, skipped compare values, paired counters | 4.6 |
-| M6 | Data-control alignment: number of stages data / valid / sideband pass through | 4.5 |
+| M6 | Data-control alignment: number of stages data / valid / sideband pass through, valid and data held until accepted, same-address read and write in one cycle | 4.5 |
 | M7 | Event lifetime within one clock domain: pulse/level nature, loss/duplication | 4.7 |
 | M8 | Optimization — cycles (latency/throughput) | 4.9 A |
 | M9 | Optimization — area/timing | 4.9 B |
@@ -201,9 +208,9 @@ To cover the same scope in the same order every session, follow the order below 
 
 | ID | Check | Technique |
 |:--:|------|:--:|
-| X1 | Interface assumptions: does the parent honor the input conditions the child expects, and do both assume the same output latency/nature? Is the same configuration value used with the same value everywhere within one transaction? | 4.3 |
+| X1 | Interface assumptions: does the parent honor the input conditions the child expects, and do both assume the same output latency/nature? Is the same configuration value used with the same value everywhere within one transaction? Does any valid depend combinationally on ready across the boundary? | 4.3 |
 | X2 | Coupled-FSM deadlock: product states of FSM pairs exchanging signals | 4.3 |
-| X3 | Clock domain crossings (CDC) | 4.7 |
+| X3 | Clock domain crossings (CDC), asynchronous reset release synchronization | 4.7, 4.8 |
 | X4 | Black box / graybox boundaries | 5, 5.5 |
 
 **Which cell an issue goes in** — each problem has one owning check. Record it only there; the other cells stay `OK`.
@@ -229,6 +236,12 @@ To cover the same scope in the same order every session, follow the order below 
 | Missing load enable, activity in cycles where the result is not used | M13 |
 | Configuration value changing midway | X1 |
 | Reset release order between modules | M1 of the module that receives the signal |
+| Asynchronous reset released without a synchronizer in a clock domain | X3 |
+| Output valid withdrawn, or its data/sideband changed, before the item is accepted | M6 |
+| Same-address read and write in one cycle returning old data where new is expected, or the reverse | M6 |
+| Input item taken without valid && ready (duplicated or stale item) | M12 |
+| Combinational dependence between valid and ready across modules (valid waits for ready, loop through the parent) | X1 |
+| Request starved forever by a fixed-priority arbiter | M3 |
 
 **(4) Cell results** — after each check, record the result in the coverage table in your working notes. Each cell is one of three values.
 - `-` : not applicable (e.g., M2 for a module without an FSM, M3 for a module with no wait point, M10 for a module without a buffer or backpressure, M11/M12 for a module that holds no per-transaction state / passes no stream of items, M13 for a purely combinational module, M14 for a module with no gated clock or clock enable, M15 for a module with no arithmetic, X2 for a module with only one child FSM)
@@ -246,7 +259,10 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
 | Hang / deadlock | At every wait point (wait state, counter wait, ready wait), is the exit event **guaranteed** to come? Could it have already passed before the wait, or be consumed/masked elsewhere? |
 | Wrong state | For every state × transition-condition combination, is the next state as intended? What if two conditions are true at once? Does an undefined encoding recover? Can it fall out of sync with a related FSM/counter? |
 | Lost/duplicated events | Is every event consumed exactly once each time it is generated? What if it arrives while the consumer is busy? Back to back? Across clock domains? |
-| Reset dependence | For the first few cycles after reset release, are all control signals valid? Does a module released from reset earlier send signals to one still in reset? |
+| Reset dependence | For the first few cycles after reset release, are all control signals valid? Does a module released from reset earlier send signals to one still in reset? Is every asynchronous reset released through a synchronizer in each clock domain (X3)? |
+| Handshake | Once valid is 1 and the item is not yet accepted, do valid, data, and sideband stay unchanged until valid && ready? Is every input item taken only in a valid && ready cycle? Does any valid depend combinationally on the ready it waits for? |
+| Storage hazard | Can the same address be read and written in one cycle (RAM, register file, FIFO storage, empty FIFO fall-through)? Does the read return the value the logic expects? |
+| Parameters | Has every check been applied to every parameter configuration and `generate` branch listed in 3.1 step 6? |
 | Capacity | After the stop signal (ready low, almost_full) is raised, how many more items still arrive, and is there always room for them? |
 | Leftover state | When a transaction ends (normally, by abort, error, flush, or soft reset), which registers keep their value, and does the next transaction read them before overwriting them? After a partial clear, are all related registers consistent? While a clear is pending, in effect, or just released, does the block still accept input it then drops, or withdraw output that was not taken? |
 | Order/count | Can a later item overtake an earlier one on any path? Does the number of items going out equal the number that came in, with exactly one `last` per frame? |
@@ -301,7 +317,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
 
 ### 4.1 Exhaustive condition combinations (wrong state, output corruption)
 - List every condition that updates a register, and check the cases where **two or more are true at once** and where **none is true**.
-- `if-else if` chains: is the result correct for input combinations where a later condition is shadowed by an earlier one? Can a later condition be shadowed forever and never served (starvation → hang)?
+- `if-else if` chains: is the result correct for input combinations where a later condition is shadowed by an earlier one? Can a later condition be shadowed forever and never served (starvation → hang, recorded under M3)?
 - `case`: are all state/select values handled? Does `default` go to a safe state? Does it rely on full_case/parallel_case directives?
 - If related registers are updated separately in different `always` blocks, is there a condition where only one side updates?
 - If one place uses a configuration value captured at start and another uses the live value, they disagree when the value changes midway (see 4.3; record the result in the X1 cell of the parent, or of the module itself if it is top).
@@ -317,6 +333,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
 - For each FSM pair exchanging signals (sender ↔ receiver, master ↔ slave), consider the **product state**. If A can be in a state waiting for B's event while B is in a state waiting for A's event, it deadlocks.
 - If only one side is reset/aborted, in which state does the other side remain?
 - Does the parent honor, on every path, the input conditions the child assumes (no duplicate start, no request while busy, etc.)?
+- **Valid/ready combinational dependence**: for each handshake between modules, follow the combinational paths on both sides. A source whose valid waits combinationally for ready (forbidden by AXI) deadlocks with a sink whose ready waits for valid; a path valid → ready → valid through the parent is a combinational loop. Record it under X1 of the parent.
 - **Configuration use-time consistency**: for each configuration value (length, mode, threshold, enable) used by more than one register, FSM, or module, list where each use takes it from — a copy captured at start, or the live value. If the uses differ, or all use the live value across several cycles of one transaction, find what breaks when it changes midway (counter end point vs. FSM length, parent and child disagreeing on mode). If the spec says the value is fixed during a transaction, do not raise it. If the spec is silent, raise it and state the condition "작업 중 설정값이 바뀔 수 있다면" in "문제 설명".
 
 ### 4.4 Wait-point analysis (hang)
@@ -333,6 +350,8 @@ For each wait point, check:
 - Paths where a mux select changes one cycle earlier or later than the data.
 - During stall/backpressure, data, valid, and sideband of the same item do not stop together (one advances while another holds), so they no longer match. Whole items lost or duplicated by a stall are checked under M12 (4.12); buffer overflow under M10 (4.10).
 - Paths where only the output valid rises in a cycle where the output register is not updated.
+- **Handshake hold**: once an output valid is 1 and the item is not yet accepted, valid must stay 1 and data/sideband must not change until valid && ready (AXI-Stream and most valid/ready protocols). Look for a valid computed from a condition that can drop (state change, timeout, a clear that is not a reset) and for output data registers loaded while valid && !ready. On the input side, an item must be taken only in a valid && ready cycle; taking it on valid alone duplicates or takes a stale item (record that under M12).
+- **Same-address read and write in one cycle**: for each RAM, register file, or FIFO storage, find cycles where the read address equals the write address. Does the read return the old or the new value (assignment order, `always` structure, a black-box RAM's read-during-write mode), and does the logic using it expect the same? A write into an empty FIFO that is read in the same or next cycle (fall-through) is the typical case. For a black-box RAM, put the expected mode in "블랙박스 확인 사항".
 
 ### 4.6 Counter/pointer relationships (output corruption, hang)
 - Relationship between a counter's range and its compare value: can the compare target (`==`) be skipped (step not 1, loaded midway)? → never terminates.
@@ -345,12 +364,13 @@ For each wait point, check:
 - If an event arrives while the consumer is busy, is it buffered, overwritten, or ignored?
 - If the same event is consumed in two places, cases where only one side handles it.
 - If a sticky flag's clear condition comes in the same cycle as its set condition, which wins?
-- Events crossing clock domains (**checked and recorded under X3 only, not M7**): 1-bit pulse passed through a 2-FF (lost going from fast to slow clock), multi-bit value through per-bit 2-FFs (skew), synchronized and unsynchronized related signals used together (reconvergence), the same signal synchronized separately in several places.
+- Events crossing clock domains (**checked and recorded under X3 only, not M7**): 1-bit pulse passed through a 2-FF (lost going from fast to slow clock), multi-bit value through per-bit 2-FFs (skew), synchronized and unsynchronized related signals used together (reconvergence), the same signal synchronized separately in several places, an asynchronous reset released without a synchronizer (4.8).
 
 ### 4.8 Reset/initialization (reset dependence)
 - Differences in reset release timing between modules: a module that wakes up first sends signals to a module still in reset.
 - Unreset registers used as mux select, FSM input, enable, or output valid (random values in real hardware).
 - Edge detectors or previous-value compare registers produce false edges right after reset.
+- **Asynchronous reset release**: each clock domain must release an asynchronous reset through a reset synchronizer (assert asynchronously, release synchronously). A raw asynchronous reset released near a clock edge leaves some registers in reset and others out of it for one cycle (metastability, split state). This is checked and recorded under X3 (상-3 if it leads to a functional error).
 - Soft reset/flush that clears only some of the related registers is checked under M11 (4.11), not here.
 
 ### 4.9 Optimization
@@ -559,6 +579,9 @@ Scenarios to try first:
 - a configuration value changed in the middle of a transaction
 - frame length 1, and the last beat coinciding with a stall
 - maximum-value inputs on every arithmetic operand, for the longest allowed accumulation
+- output ready held at 0 for many cycles while valid is 1, and ready toggling every cycle (handshake hold)
+- the same address read and written in one cycle, and a write into an empty FIFO read at once
+- every parameter configuration in use (3.1 step 6), not only the default values
 
 ---
 
@@ -687,7 +710,7 @@ init → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.15 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.16 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
 - **참고 스펙**: `analysis-spec.md` if it was used (confirmed in 3.0). **If no spec was used, omit this row.**
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".

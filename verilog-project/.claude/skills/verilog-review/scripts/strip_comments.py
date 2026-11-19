@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """주석을 뺀 분석용 사본을 만든다 (verilog-review 3.0).
 
-- --src 폴더 아래 *.v *.sv *.vh *.svh 파일을 같은 상대 경로로 --out 폴더에 복사한다.
+- --src 폴더 아래 *.v *.sv *.vh *.svh 파일과 include 파일(*.inc *.h *.vinc *.svi)을 같은 상대 경로로 --out 폴더에 복사한다.
 - // 줄 주석과 /* */ 블록 주석을 지우고 공백 한 칸만 남긴다. 줄바꿈은 그대로 두므로 줄 번호가 원본과 같다.
 - 각 줄 끝의 공백을 지운다 (주석만 있던 줄은 빈 줄이 된다). 토큰을 아끼기 위해서다.
 - 문자열 "..." 안과 escaped identifier(\\name) 안의 //, /* 는 주석으로 보지 않는다.
@@ -17,7 +17,8 @@ import re
 import shutil
 import sys
 
-EXTS = ('.v', '.sv', '.vh', '.svh')
+# include 파일(.inc .h .vinc .svi)도 사본에 넣는다 (분석 소스 줄 수 집계는 session_usage.py가 .v .sv .vh .svh만 센다)
+EXTS = ('.v', '.sv', '.vh', '.svh', '.inc', '.h', '.vinc', '.svi')
 PRAGMA = re.compile(
     r'\s*(synopsys|synthesis|pragma|cadence|ambit|xilinx|altera|'
     r'translate_off|translate_on|full_case|parallel_case)\b', re.I)
