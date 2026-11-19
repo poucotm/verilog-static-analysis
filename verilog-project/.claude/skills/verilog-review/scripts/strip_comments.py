@@ -2,7 +2,8 @@
 """주석을 뺀 분석용 사본을 만든다 (verilog-review 3.0).
 
 - --src 폴더 아래 *.v *.sv *.vh *.svh 파일을 같은 상대 경로로 --out 폴더에 복사한다.
-- // 줄 주석과 /* */ 블록 주석을 공백으로 바꾼다. 줄바꿈은 그대로 두므로 줄 번호가 원본과 같다.
+- // 줄 주석과 /* */ 블록 주석을 지우고 공백 한 칸만 남긴다. 줄바꿈은 그대로 두므로 줄 번호가 원본과 같다.
+- 각 줄 끝의 공백을 지운다 (주석만 있던 줄은 빈 줄이 된다). 토큰을 아끼기 위해서다.
 - 문자열 "..." 안과 escaped identifier(\\name) 안의 //, /* 는 주석으로 보지 않는다.
 - pragma 주석(synopsys, synthesis, pragma, translate_off 등으로 시작)은 남긴다.
 - --out 은 reports/.nocomment 이거나 그 아래여야 한다. 실행할 때마다 지우고 새로 만든다.
@@ -21,8 +22,11 @@ PRAGMA = re.compile(
 
 
 def blank(text):
-    """주석 text를 줄바꿈만 남기고 공백으로 바꾼다."""
-    return ''.join(c if c in '\r\n' else ' ' for c in text)
+    """주석 text를 공백 한 칸과 줄바꿈만 남긴다 (토큰 절약, 줄 번호 유지)."""
+    return ' ' + ''.join(c for c in text if c in '\r\n')
+
+
+TRAIL = re.compile(r'[ \t]+(?=\r?\n|\Z)')
 
 
 def strip(src):
@@ -67,7 +71,7 @@ def strip(src):
             while j < n and src[j] not in '"\\/':
                 j += 1
             out.append(src[i:j]); i = j
-    return ''.join(out), removed, kept
+    return TRAIL.sub('', ''.join(out)), removed, kept
 
 
 def read(path):
