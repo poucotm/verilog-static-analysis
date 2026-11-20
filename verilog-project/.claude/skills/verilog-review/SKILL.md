@@ -50,7 +50,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
   - Do not show a separate confidence level.
 - **External input assumption**: unless the spec (`analysis-spec.md`) constrains them, assume top inputs may arrive in any order and timing allowed by the protocol. If the spec constrains them, follow the constraint.
 - Do not assume design intent. Read the spec first (code comments are not read; see "Analyze the comment-free copy only").
-  - The spec is the single file `analysis-spec.md` in the project folder. Read it **only through the comment-free copy `reports/.nocomment/analysis-spec.md`** made by `strip_comments.py --spec` (3.0 (1) step 0). Never open the original: everything inside `<!-- -->` (writing guide and examples) is never read, interpreted, or counted. If nothing is left outside the comments, there is no spec.
+  - The spec is the single file `analysis-spec.md` in the project folder. It is read **as is (no copy, no comment stripping) at session start, before the first guide** (CLAUDE.md). Everything inside `<!-- -->` (writing guide and examples) is ignored: never interpreted, used as evidence, or counted. If nothing is left outside the comments, there is no spec. Read it again only if the user says it changed.
   - The `## TOP` section gives the top module name only. It is not a constraint and is not counted.
   - Behavior listed under the spec's "의도된 동작" (intended behavior) is not raised as an issue by itself. Other problems caused by that behavior are raised.
   - If spec items have IDs (constraint `C1`, intended behavior `I1`, analysis request `R1`, etc.), cite the ID in the issue's 문제 설명 / 심각도 근거 and in the user report (e.g., "스펙 C2에 따라 중간 beat의 부분 wkeep은 가정하지 않음").
@@ -81,7 +81,7 @@ This classification is only a viewpoint for analysis. Do not write a classificat
 Once top is set (and the source folder, `source` by default), show the composition below and ask for confirmation **before the actual analysis**. **Do not start the analysis until the user confirms the composition is correct.** Record the start time (step 0 of 3.1) only after that answer: 소요시간 counts only the actual analysis, not the pre-check scan or the time spent waiting for the answer. There is no question about the PDF report: it is **always** made after the analysis (3.6).
 
 **(1) Quick composition scan** — do not read logic; only skim module definitions and instances.
-0. Make the comment-free copy: `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --spec analysis-spec.md --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy, **with `reports/.nocomment` as the search path** (same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
+0. Make the comment-free copy of the source folder — this is the first step after the user asks to start the analysis (never at session start or before the guide): `python .claude/skills/verilog-review/scripts/strip_comments.py --src <source folder> --out reports/.nocomment`. It deletes and rebuilds `reports/.nocomment/` every time. Do every Glob/Grep below on this copy, **with `reports/.nocomment` as the search path** (same folder structure, so `graybox/` stays), so commented-out modules and instances are not counted.
    - If `python` is missing, try `python3` once more. If that also fails, do not analyze: tell the user that Python is needed to make the comment-free copy, and stop.
 1. Glob the `*.v` `*.sv` `*.vh` `*.svh` files with `reports/.nocomment` as the path (the copy of the source folder). Include files (`.inc` `.h` `.vinc` `.svi`) are in the copy too.
 2. Grep for `module <name>` definitions and build a module → file table. Mark modules in files inside a `graybox` folder as grayboxes (section 5.5).
@@ -92,10 +92,10 @@ Once top is set (and the source folder, `source` by default), show the compositi
    - **블랙박스** (black box): instantiated but with no definition in the source folder (vendor/IP vs. 미제공, section 5)
    - **미사용** (unused): defined but unreachable from top (not analyzed)
    - **확인 필요** (needs confirmation): duplicate definitions with the same name, `` `include `` files missing from the source folder, lines where it is unclear whether they are instances
-5. **Check the spec**: read `reports/.nocomment/analysis-spec.md` (never the original) and count:
+5. **Check the spec**: use `analysis-spec.md` as read at session start (read it again if the user said it changed), ignoring everything inside `<!-- -->`, and count:
    - the number of constraint items (입력·출력 조건), intended behaviors, and analysis request items
    - if a signal or module name in the spec is not in the code (different name, or unclear which port it means), put it under **확인 필요**.
-   - If the script printed `스펙: 없음` or `주석 밖 내용 없음`, write "참고 스펙: 없음". With no spec, assume every input order/timing the protocol allows (section 1).
+   - If the file does not exist or has nothing outside the comments, write "참고 스펙: 없음". With no spec, assume every input order/timing the protocol allows (section 1).
    - If the top the user named differs from the spec's `## TOP`, use the user's top and write it on the 참고 스펙 line (`스펙 TOP(<name>)과 다름`).
 
 Message format (sent in Korean exactly like this; drop rows for categories that do not apply, and drop the 미사용 / 확인 필요 lines if there are none. Always write the 참고 스펙 line):
@@ -124,7 +124,7 @@ Message format (sent in Korean exactly like this; drop rows for categories that 
 - **Never skip the composition check**, even if the request already mentions a PDF or report.
 - "맞아", "네", "ㅇㅇ", "OK" mean the composition is correct. Start the analysis right away; ask nothing else.
 - If the user says the composition is wrong, fix it, show the table again, and get confirmation again.
-  - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. The same applies when `analysis-spec.md` is changed.
+  - Claude does not move files inside the source folder (CLAUDE.md general principles). If the user moves or adds files and asks to check again, rescan from the start. When `analysis-spec.md` is changed, read it again and redo step 5.
   - If the user says something like "이번 분석에서는 X를 그레이박스로 봐줘", follow it and append `(사용자 지정)` to the 그레이박스 cell of the result file's overview.
 - If there are 확인 필요 items, do not analyze until the user decides (e.g., which of the duplicate definitions to use).
 - Run the composition check on every re-analysis (files may have changed). Then analyze as in section 2 (re-analysis in the same session is a full analysis).
@@ -710,7 +710,7 @@ init → state → ready → 출력 ready
   - Example: `AXI-Stream으로 받은 샘플에 창 함수를 곱하고 누적해 프레임 단위 결과를 낸다. rx_ctrl이 프레임 경계와 ready를 제어하고, rx_dp가 곱셈·누적·포화를 처리한다.`
   - No code locations. Mention grayboxes and black boxes by name only. It is a table cell, so no line breaks.
 - **블랙박스 / 그레이박스**: count and module names. If none, "없음".
-- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.16 @ POUCO`
+- **룰 버전**: the rule version used for the analysis (the value in CLAUDE.md's "룰 버전" section) followed by one space and `@ POUCO`. Example: `v0.8.17 @ POUCO`
 - **TOP**: item name in uppercase `TOP`; value is the module name as is (case preserved).
 - **참고 스펙**: `analysis-spec.md` if it was used (confirmed in 3.0). **If no spec was used, omit this row.**
 - **분석 소스 / 분석시간 / 사용모델 / 노력 / 소요시간 / 토큰 사용량**: write `(측정 중)` in the result file; `session_usage.py --fill` in step 2 of 3.6 replaces them with real values (e.g., `총 12개 파일, 3,450줄`, `2026-10-29 14:10`, `Opus 5.5`, `medium`, `12분 30초`, `총 1.85M (출력 42K)`). If measurement fails, "측정 불가".
@@ -868,5 +868,6 @@ Go through the list below **from the top, in order**, and take the grade of the 
 - Asserting black-box internal behavior by guessing
 - Raising problems that start and end inside a graybox; proposing fixes to graybox code
 - Using Verilog files outside the source folder in the analysis
+- Reading, searching, listing, or writing anything outside the project folder and its subfolders unless the user says so (scripts' own temp files, fonts, and session log excepted; CLAUDE.md 일반 원칙)
 - Creating analysis result files other than `reports/<top>_review_<YYYYMMDD>.md`
 - Writing responses or the result file in English (everything the user sees is Korean)

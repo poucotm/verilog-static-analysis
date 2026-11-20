@@ -6,8 +6,7 @@
 - 각 줄 끝의 공백을 지운다 (주석만 있던 줄은 빈 줄이 된다). 토큰을 아끼기 위해서다.
 - 문자열 "..." 안과 escaped identifier(\\name) 안의 //, /* 는 주석으로 보지 않는다.
 - pragma 주석(synopsys, synthesis, pragma, translate_off 등으로 시작)은 남긴다.
-- --spec 을 주면 스펙 파일(analysis-spec.md)의 <!-- --> 주석을 지운 사본을 --out 에 만들고,
-  "## TOP" 절의 내용(없으면 "없음")을 출력한다.
+- 스펙(analysis-spec.md)은 다루지 않는다 (세션 시작 때 원본을 그대로 읽는다).
 - --out 은 reports/.nocomment 이거나 그 아래여야 한다. 실행할 때마다 지우고 새로 만든다.
 - 원본은 읽기만 한다.
 """
@@ -86,71 +85,24 @@ def read(path):
             pass
 
 
-MD_COMMENT = re.compile(r'<!--.*?(-->|\Z)', re.S)
-HEADING = re.compile(r'^\s*#{1,6}\s*(.*?)\s*#*\s*$')
-
-
-def spec_copy(path, out):
-    """스펙 파일에서 <!-- --> 주석을 지운 사본을 만들고 Top 절과 내용 유무를 출력한다."""
-    if not os.path.isfile(path):
-        print(f'스펙: 없음 ({path} 없음)')
-        print('스펙 TOP: 없음')
-        return
-    text, enc = read(path)
-    new = MD_COMMENT.sub(lambda m: ''.join(c for c in m.group(0) if c in '\r\n'), text)
-    new = TRAIL.sub('', new)
-    q = os.path.join(out, os.path.basename(path))
-    os.makedirs(out, exist_ok=True)
-    with open(q, 'w', encoding=enc, newline='') as f:
-        f.write(new)
-
-    top, items, sec = [], 0, None
-    for line in new.splitlines():
-        h = HEADING.match(line)
-        if h and line.lstrip().startswith('#'):
-            sec = h.group(1).strip().lower()
-            continue
-        if not line.strip():
-            continue
-        if sec == 'top':
-            top.append(line.strip())
-        else:
-            items += 1
-    rel = os.path.relpath(q).replace(os.sep, '/')
-    if items:
-        print(f'스펙: {rel} (주석 밖 내용 {items}줄)')
-    else:
-        print(f'스펙: {rel} (주석 밖 내용 없음 = 참고 스펙 없음)')
-    print('스펙 TOP: ' + (' / '.join(top) if top else '없음'))
-
-
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--src', help='소스 폴더 (Verilog 사본을 만든다)')
-    ap.add_argument('--spec', help='스펙 파일 (보통 analysis-spec.md, 주석을 지운 사본을 만든다)')
+    ap.add_argument('--src', required=True, help='소스 폴더 (Verilog 사본을 만든다)')
     ap.add_argument('--out', default='reports/.nocomment')
     a = ap.parse_args()
-    if not a.src and not a.spec:
-        sys.exit('오류: --src나 --spec 중 하나는 있어야 합니다')
-
     out = os.path.abspath(a.out)
     guard = os.path.abspath('reports/.nocomment')
     if not (out == guard or out.startswith(guard + os.sep)):
         sys.exit(f'오류: --out은 reports/.nocomment 아래여야 합니다: {a.out}')
-    if a.src:
-        src = os.path.abspath(a.src)
-        if not os.path.isdir(src):
-            sys.exit(f'오류: 소스 폴더가 없습니다: {a.src}')
-        if out == src or out.startswith(src + os.sep) or src.startswith(out + os.sep):
-            sys.exit('오류: --src와 --out이 겹칩니다')
+    src = os.path.abspath(a.src)
+    if not os.path.isdir(src):
+        sys.exit(f'오류: 소스 폴더가 없습니다: {a.src}')
+    if out == src or out.startswith(src + os.sep) or src.startswith(out + os.sep):
+        sys.exit('오류: --src와 --out이 겹칩니다')
 
     if os.path.exists(out):
         shutil.rmtree(out)
     os.makedirs(out)
-    if a.spec:
-        spec_copy(a.spec, out)
-    if not a.src:
-        return
     files = removed = kept = 0
     for root, dirs, names in os.walk(src):
         dirs.sort()
