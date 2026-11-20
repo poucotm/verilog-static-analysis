@@ -92,6 +92,7 @@
 - **분석은 코드를 읽어서만 한다 (정적 분석).** 시뮬레이터(iverilog, verilator 등), lint, 합성 도구(yosys 등), 정형 검증 도구는 설치되어 있어도 실행하지 않는다. 테스트벤치나 assertion 파일도 만들지 않는다.
 - 분석 중 쓰는 것은 파일 읽기와 검색(Read, Grep, Glob 등)뿐이다. 예외로 세 명령은 실행한다: 주석을 지운 분석용 사본 만들기(`.claude/skills/verilog-review/scripts/strip_comments.py`, 소스 원본은 읽기만 하고 사본을 `reports/.nocomment/`에 만든다. 분석 시작 요청 후 사전 확인 첫 단계에서만 실행한다), 분석 시작 시각 기록(`date -u +%Y-%m-%dT%H:%M:%SZ`), `.claude/skills/verilog-review/scripts/session_usage.py` (소스 파일 줄 수를 세고 세션 로그를 읽기만 한다).
 - PDF 변환에만 pandoc + xelatex를 쓴다. 없으면 설치할지, Markdown 보고서로 마칠지 사용자에게 묻는다 (`verilog-report` 5.1). 묻기 전에는 설치하지 않는다.
+- PDF는 `.claude/skills/verilog-report/scripts/check_pdf.py`로 글자로 점검하고, 쪽 이미지는 1쪽(그림이 넘어가면 2쪽)만 Read로 본다 (`verilog-report` 5장 3단계).
 - PDF를 만든 뒤에는 묻지 않고 `.claude/skills/verilog-report/scripts/open_folder.sh`로 `reports/pdf` 폴더를 열어 PDF를 선택해 준다 (`verilog-report` 5장).
 - 실행 환경이 Windows일 수 있다. 셸 명령은 Bash(Git Bash) 기준으로 쓰고, 경로는 `/` 구분자를 사용한다.
 

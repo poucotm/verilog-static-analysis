@@ -306,7 +306,7 @@ Numbers are assigned in 3.5, so during checks use temporary names (e.g., `ctrl-M
    - Tokens are read from the session log (`~/.claude/projects/<project key>/*.jsonl`). Total tokens are the sum of input, output, cache read, and cache creation; most of it is cache read.
    - 사용모델 and 노력 (effort) are also read from the same session log, from responses after the analysis start (e.g., `Opus 5.5`, `medium`). If they changed during analysis, they are listed by usage, most first. Claude never guesses them.
    - If `python` is missing, try `python3` once more. If that also fails, replace the six cells with "측정 불가". Do not stop the analysis because measurement failed.
-3. **Always make the PDF report.** After the step-2 measurement, continue with the `verilog-report` skill procedure without asking the user. Report once at the end: count per severity, titles of severity "상" issues, result file and PDF paths (`verilog-report` section 6). The only question allowed is the one in `verilog-report` 5.1, when PDF tools are missing.
+3. **Always make the PDF report.** Load the `verilog-report` skill (Skill tool) **in the same response as the step-2 measurement call** (two tool calls in parallel; this saves one full re-read of the conversation), then continue with its procedure without asking the user. Do not load it earlier, before the result file is written. Report once at the end: count per severity, titles of severity "상" issues, result file and PDF paths (`verilog-report` section 6). The only question allowed is the one in `verilog-report` 5.1, when PDF tools are missing.
    - Time and tokens spent on the report are not included in the overview values (measurement already finished in step 2). The measurement script is still **the last tool call of the analysis**; the report comes after it.
    - The user report is in Korean. It also includes the per-request results for the spec's 분석 요청 사항 (section 1) and any differences from the confirmed composition (3.0).
    - End the user report with this line as is: `수정을 반영한 뒤 다시 분석할 때는 /clear로 새 세션을 시작해 주세요. 같은 세션에서는 앞 분석 내용에 끌려 새 문제를 놓치기 쉽습니다.`
@@ -587,7 +587,7 @@ Scenarios to try first:
 
 ## 7. Result File Format (`reports/<top>_review_<YYYYMMDD>.md`)
 
-`.claude/skills/verilog-report/assets/report_template.md` is the complete example. Write the result file with the same structure as that example, except the first-line title is `# <top> 정적 분석 결과`.
+The skeleton below, with the rules in this section and the cycle-table format in section 6, is the complete format. **Do not Read `.claude/skills/verilog-report/assets/report_template.md`** (the report skill's filled-in example with the same structure): opening it costs one more call that re-reads the whole conversation, and its content stays in every later call. The result file has the same structure as that example, except the first-line title is `# <top> 정적 분석 결과` and there is no appendix (the report adds it).
 **The whole result file is written in Korean.** Headings, table headers, and item names are the exact Korean literals shown below.
 
 ````markdown

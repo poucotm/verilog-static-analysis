@@ -8,7 +8,7 @@ description: Turns a verilog-review result file (reports/<top>_review_<date>.md)
 Turn a `verilog-review` result into a PDF report. The report is named with **the top module name and the date**.
 This skill only makes the report. It never re-analyzes or changes the analysis result.
 
-**Complete example: `assets/report_template.md`** (relative to this skill folder). Write the report with the same structure and the same Markdown syntax as this example.
+**Complete example: `assets/report_template.md`** (relative to this skill folder). The report has the same structure and the same Markdown syntax as this example. In the normal flow (section 5) the report is assembled from the result file by a shell command, so **do not Read the template**; open it only when the result file is broken and the report has to be fixed by hand.
 
 ## Language
 
@@ -203,13 +203,16 @@ At the very end of the report, add `## 부록: 점검 ID와 심각도 기준`. C
 
 ## 5. PDF generation
 
-1. Write `reports/pdf/<top>_report_<date tag>.md` with the structure above
-2. Convert:
+**Keep the number of calls small.** Every tool call re-reads the whole conversation (about 150K tokens after an analysis), which costs far more than any single step here. The normal flow is exactly three calls after the skill is loaded: **(A) one Bash call** that writes the report, converts, checks, and opens the folder → **(B) Read page 1 of the PDF** → **(C) the final report** (section 6). Do not look at the template, the result file, or the report before (A); everything needed is in the command below.
+
+1. **(A) Write, convert, check, and open in one Bash call.** The result file already has the report structure (`verilog-review` section 7 uses `assets/report_template.md` as its format), so the report `.md` is the result file with the title line replaced and the appendix (3.7) appended. Fill in `<top>`, `<TOP>` (top name in upper case), and `<date tag>`, and run as is:
    ```bash
-   bash .claude/skills/verilog-report/scripts/build_pdf.sh reports/pdf/<top>_report_<date tag>.md
+   s=.claude/skills/verilog-report; r=reports/pdf/<top>_report_<date tag>
+   mkdir -p reports/pdf && { echo "# <TOP> RTL Analysis Report"; tail -n +2 reports/<top>_review_<date tag>.md; echo; sed -n '/^## 부록/,$p' $s/assets/report_template.md; } > $r.md
+   bash $s/scripts/build_pdf.sh $r.md; e=$?; echo "build exit=$e"
+   if [ $e = 0 ]; then py=$(command -v python || command -v python3); "$py" $s/scripts/check_pdf.py $r.md $r.pdf; bash $s/scripts/open_folder.sh $r.pdf; fi
    ```
-   A `.pdf` with the same name is created. The script applies:
-   - body 9pt, margins 12mm
+   - `build_pdf.sh` makes a `.pdf` with the same name: body 9pt, margins 12mm, title box, grid tables, section/issue/item heading styles, design-structure figure.
    - **Fonts: the bundled fonts in `assets/fonts/` are used directly by path.** The output looks the same on any PC, and no font installation is needed.
      | Use | Font | License |
      |------|------|------|
@@ -218,24 +221,23 @@ At the very end of the report, add `## 부록: 점검 ID와 심각도 기준`. C
      | Code blocks (Latin and Korean) | D2Coding (Korean exactly 2 Latin cells) | OFL |
    - If bundled font files are missing, it picks similar fonts installed on the PC and prints a warning (Korean: narrow fonts → Pretendard/Spoqa/Noto etc. compressed to 88%; Latin: condensed fonts; code: D2Coding → Consolas etc.). The look may then differ slightly between PCs.
    - Do not delete or rename the font files and license files (`OFL-*.txt`, `LICENSE-*.txt`) in `assets/fonts/`.
-   - title box, grid tables, section/issue/item heading styles, design-structure figure
-3. After generation, check the PDF:
-   - no broken Korean; spacing between Korean and Latin text matches the source
-   - NO, 심각도, 위치 in the summary table are on one line, and titles do not wrap onto two lines (if they do, shorten the title)
-   - "보기" links jump to the right details
-   - the design-structure figure is half a page or less and box names are readable
-   - no blank pages or large gaps in the middle
-   - columns of cycle tables and diffs line up and nothing is cut off on the right
-4. Handling by script exit code:
-   - `0`: PDF created
+   - `check_pdf.py` checks the PDF **with text, not page images**. It prints only the page count and problems, ending with `점검 결과: 문제 없음` or `점검 결과: 문제 n건`:
+     - blank or nearly empty pages in the middle
+     - broken characters
+     - summary-table rows that do not come out on one line (title or 위치 wrapped → shorten the title)
+     - code-block lines (cycle tables, diffs) wider than the page (cut off on the right → shorten or split the line)
+     - "보기" links without a matching `{#v-…}` heading
+   - `open_folder.sh` opens `reports/pdf` with the new PDF selected (Windows Explorer, macOS Finder; Linux opens the folder only). If it prints `폴더 열기 생략` or fails, just go on; its result never changes the flow.
+2. **Handling by `build exit`**:
+   - `0`: PDF created; go to step 3.
    - `2` (tools missing), `3` (no Korean font): **ask the user** following 5.1.
-   - Other errors (LaTeX errors, etc.): if the error message shows something fixable in the Markdown, fix it and try once more; if it still fails, finalize the `.md` as the report and tell the user the error.
-5. **Open the folder** — once the PDF is created (exit code `0`) and checked (step 3), run this once without asking:
-   ```bash
-   bash .claude/skills/verilog-report/scripts/open_folder.sh reports/pdf/<top>_report_<date tag>.pdf
-   ```
-   It opens `reports/pdf` with the new PDF selected (Windows Explorer, macOS Finder; Linux opens the folder only). If it prints `폴더 열기 생략` or fails, just go on; its result never changes the flow. Do not run it when only the `.md` report was made, and do not run it again on retries.
-6. On Windows, run with Git Bash. The `폰트: … — 번들 글꼴(assets/fonts)` line in the conversion log shows whether the bundled fonts were used.
+   - Other errors (LaTeX errors, etc.): if the error message shows something fixable in the Markdown, fix it and run the `build_pdf.sh` and `check_pdf.py` lines again in one call; if it still fails, finalize the `.md` as the report and tell the user the error.
+3. **(B) Read only page 1 of the PDF** (`pages: "1"`) to check the title box, overview table, Korean/Latin spacing, and the design-structure figure (half a page or less, box names readable). Read page 2 too, in the same Read, only if the figure continues there. **Do not Read any other page.**
+   - If `check_pdf.py` reported problems, fix the `.md` (only the lines it named) and run the `build_pdf.sh` and `check_pdf.py` lines again **in one Bash call**. Do not run `open_folder.sh` again (the open folder shows the rebuilt file). Read a page image again only when the fix changed page 1 or the figure, or when a problem's cause cannot be found from the script output (then only that page).
+   - If it printed `pdftotext 없음`, do not install anything: Read pages 1–3 instead and check what is visible there.
+   - If there are no problems, go straight to the final report (section 6) in the next response; do not make other calls.
+4. If `.md` editing is needed, keep it to the problem lines: the report body must stay faithful to the result file (section 4).
+5. On Windows, run with Git Bash. The `폰트: … — 번들 글꼴(assets/fonts)` line in the conversion log shows whether the bundled fonts were used.
 
 ### 5.1 When the environment cannot make a PDF
 If tools or Korean fonts are missing and a PDF cannot be made, with the `.md` report already written, **ask the user once** (in Korean) and proceed by the answer. Never install without asking.
@@ -246,7 +248,7 @@ Question (send in Korean as is):
 > 2. 설치하지 않고 Markdown 보고서(`<md 경로>`)로 마치기
 
 - **If 2 is chosen**: finalize the `.md` as the report and go to the final report (section 6).
-- **If 1 is chosen**: install only what is missing with the commands in the table below, then run the conversion again.
+- **If 1 is chosen**: install only what is missing with the commands in the table below, then run the step-1 command again from the `bash $s/scripts/build_pdf.sh` line (with the `s=` and `r=` line), in one Bash call.
   - If an install command fails or lacks permission, stop trying and finalize the `.md` as the report, with the error.
   - If after installation `command -v` still cannot find it (PATH not updated), the script looks in known install paths automatically. If that still fails, tell the user to restart Claude Code in a new terminal.
 - If 2 was already chosen in the same session, do not ask again; produce the `.md`.
